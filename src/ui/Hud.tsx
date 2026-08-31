@@ -11,11 +11,13 @@ interface Props {
   hud: HudState;
   onOpenShop: () => void;
   onOpenMaps: () => void;
+  onRallyAttack: () => void;
+  onRallyCollect: () => void;
 }
 
 const RES_ORDER: ResourceKind[] = ['leaf', 'mushroom', 'cactus', 'banana', 'flower', 'crystal'];
 
-export default function Hud({ hud, onOpenShop, onOpenMaps }: Props) {
+export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRallyCollect }: Props) {
   const xpPct = Math.min(100, (hud.xp / Math.max(1, hud.xpToNext)) * 100);
   const hungerPct = (hud.queenHunger / hud.queenHungerMax) * 100;
   const nestPct = (hud.nestHp / hud.nestHpMax) * 100;
@@ -38,7 +40,7 @@ export default function Hud({ hud, onOpenShop, onOpenMaps }: Props) {
             ? `🌊 ONDA ${hud.wave.num} · ${waveSec}s`
             : `Próxima onda em ${waveSec}s`}
         </div>
-        {hud.boss && (
+        {hud.boss && hud.bossAggro && (
           <div className={styles.bossWrap}>
             <span className={styles.bossName}>{hud.boss.name}</span>
             <div className={styles.bossBar}>
@@ -51,13 +53,14 @@ export default function Hud({ hud, onOpenShop, onOpenMaps }: Props) {
         )}
       </div>
 
-      {/* topo-direita: recursos */}
+      {/* topo-direita: recursos + exploração [O] */}
       <div className={styles.resources}>
         {RES_ORDER.map((k) => (
           <span key={k} className={styles.res}>
             {RESOURCES[k].icon} {hud.resources[k] ?? 0}
           </span>
         ))}
+        <span className={styles.explored}>EXPLORADO {hud.exploredPct}%</span>
       </div>
 
       {/* toasts */}
@@ -94,8 +97,22 @@ export default function Hud({ hud, onOpenShop, onOpenMaps }: Props) {
         </div>
       </div>
 
-      {/* rodapé-direita: loja + mapas */}
+      {/* rodapé-direita: rally [O] + loja + mapas */}
       <div className={styles.actions}>
+        <button
+          className={`${styles.actionBtn} ${styles.rallyBtn} ${hud.rally.attackCd <= 0 ? styles.rallyReady : ''}`}
+          disabled={hud.rally.attackCd > 0 || hud.gameOver}
+          onClick={onRallyAttack}
+        >
+          {hud.rally.attackCd > 0 ? `ATACAR! ${hud.rally.attackCd}s` : 'ATACAR!'}
+        </button>
+        <button
+          className={`${styles.actionBtn} ${styles.rallyBtn} ${hud.rally.collectCd <= 0 ? styles.rallyReady : ''}`}
+          disabled={hud.rally.collectCd > 0 || hud.gameOver}
+          onClick={onRallyCollect}
+        >
+          {hud.rally.collectCd > 0 ? `COLETA! ${hud.rally.collectCd}s` : 'COLETA!'}
+        </button>
         <button className={styles.actionBtn} onClick={onOpenShop}>LOJA</button>
         <button className={styles.actionBtn} onClick={onOpenMaps}>MAPAS</button>
       </div>

@@ -74,6 +74,7 @@ export interface SpriteSet {
   boss: Partial<Record<EnemyKind, Frame>>;
   heroAnt: Frame;
   heroAntUrl: string;
+  cloud: Frame;
   menuBg: string;
   btnBack: string;
   soundOn: string;
@@ -91,7 +92,7 @@ export async function loadSprites(): Promise<SpriteSet> {
     c1, c2, c3, c4, c5, c6, c7,
     s1, s2, s3, s4, s5, s6,
     tree, mushroom, leaf, nest, stoneSmall, stoneBig,
-    bAntlion, bMosquito, bScorpion, bMantis, bCentipede, bMoth, heroAnt,
+    bAntlion, bMosquito, bScorpion, bMantis, bCentipede, bMoth, heroAnt, cloud,
   ] = await Promise.all([
     loadImage(url('ant_worker_frame1.png')), loadImage(url('ant_worker_frame2.png')),
     loadImage(url('ant_worker_frame3.png')), loadImage(url('ant_worker_frame4.png')),
@@ -109,7 +110,7 @@ export async function loadSprites(): Promise<SpriteSet> {
     loadImage(url('boss_antlion.png')), loadImage(url('boss_mosquito.png')),
     loadImage(url('boss_scorpion.png')), loadImage(url('boss_mantis.png')),
     loadImage(url('boss_centipede.png')), loadImage(url('boss_moth.png')),
-    loadImage(url('hero_ant.png')),
+    loadImage(url('hero_ant.png')), loadImage(url('cloud.png')),
   ]);
 
   const workerFrames = [w1, w2, w3, w4, w5, w6, w7] as Frame[];
@@ -125,7 +126,7 @@ export async function loadSprites(): Promise<SpriteSet> {
       antlion: bAntlion, mosquito: bMosquito, scorpion: bScorpion,
       mantis: bMantis, centipede: bCentipede, moth: bMoth,
     },
-    heroAnt, heroAntUrl: url('hero_ant.png'),
+    heroAnt, heroAntUrl: url('hero_ant.png'), cloud,
     menuBg: url('menu_background.jpg'),
     btnBack: url('btn_back.png'),
     soundOn: url('sound_on.png'),
@@ -144,6 +145,7 @@ export function drawAnt(
   dir: 1 | -1,
   walkPhase: number,
   size: number,
+  lift = 0,
 ): void {
   if (frames.length === 0) return;
   const idx = Math.floor(walkPhase) % frames.length;
@@ -151,14 +153,14 @@ export function drawAnt(
   const z = size / ANT_SPRITE.DRAW_BASE;
   const ax = ANT_SPRITE.ANCHOR_X * z;
   const ay = ANT_SPRITE.ANCHOR_Y * z;
-  // sombra [O]: elipse rgba(0,0,0,0.22), raio = size/22×6
-  const p = (size / 22) * 6;
+  // sombra [O]: elipse rgba(0,0,0,0.22) no CHÃO, encolhe com a altura
+  const p = (size / 22) * 6 * Math.max(0.4, 1 - lift / 220);
   ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
   ctx.beginPath();
   ctx.ellipse(Math.round(x), Math.round(y) + 3, p, p * 0.6, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.save();
-  ctx.translate(Math.round(x), Math.round(y));
+  ctx.translate(Math.round(x), Math.round(y - lift));
   if (dir < 0) ctx.scale(-1, 1);
   ctx.drawImage(f, -ax, -ay, size, size);
   ctx.restore();

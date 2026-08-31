@@ -4,7 +4,7 @@
  * Consolidado: carga, gravação, checksum e storage num arquivo só.
  * v1 é rejeitado (mudança de modelo); USE_CHECKSUM protege contra corrupção.
  */
-import { SAVE, type AntClass, type MapId, type ResourceKind } from '../core/constants';
+import { SAVE, type AntClass, type EnemyKind, type MapId, type ResourceKind } from '../core/constants';
 import type { AntState, Resources, UpgradeLevels, WaveState } from '../core/types';
 import { FogOfWar } from '../engine/fogOfWar';
 import { modsFrom, emptyUpgrades } from '../systems/shop';
@@ -21,10 +21,11 @@ interface SavedAnt {
   state: AntState; timer: number; attackCd: number;
   targetResId: number | null; targetEnemyId: number | null;
   tx: number; ty: number; walkPhase: number; seed: number;
+  z: number; vx: number; vy: number; vz: number;
 }
 
 export interface RunSaveV2 {
-  version: 2;
+  version: 2 | 3;
   savedAt: number;
   mapId: MapId;
   runSeconds: number;
@@ -40,15 +41,27 @@ export interface RunSaveV2 {
   nestHp: number;
   wave: WaveState;
   ants: SavedAnt[];
-  resourceNodes: ReadonlyArray<{ id: number; kind: ResourceKind; x: number; y: number; amount: number }>;
+  resourceNodes: ReadonlyArray<{ id: number; kind: ResourceKind; x: number; y: number; amount: number; phase?: number }>;
   fogRLE: number[];
   camera: { cx: number; cy: number; mode: string };
   selectedAntId: number | null;
   gameOver: boolean;
+
+  // v3 (ciclo A)
+  totalsByResource?: Partial<Record<ResourceKind, number>>;
+  totalsByEnemy?: Partial<Record<EnemyKind, number>>;
+  missionsProgress?: Record<string, number>;
+  missionsDone?: string[];
+  achievementsDone?: string[];
+  rebirths?: number;
+  ownedAnts?: Record<AntClass, number>;
+  respawnQueue?: Array<{ cls: AntClass; t: number }>;
 }
 
+export type RunSaveV3 = RunSaveV2 & Required<Pick<RunSaveV2, 'version'>>;
+
 interface SaveEnvelope {
-  v: 2;
+  v: 2 | 3;
   checksum: string;
   data: RunSaveV2;
 }
@@ -95,7 +108,7 @@ export function clearSave(): void {
 
 export function serialize(engine: GameEngine): RunSaveV2 {
   return {
-    version: 2,
+    version: SAVE.VERSION as 3,
     savedAt: Date.now(),
     mapId: engine.mapId,
     runSeconds: engine.clock.runSeconds,
@@ -116,21 +129,31 @@ export function serialize(engine: GameEngine): RunSaveV2 {
       state: a.state, timer: a.timer, attackCd: a.attackCd,
       targetResId: a.targetResId, targetEnemyId: a.targetEnemyId,
       tx: Math.round(a.tx), ty: Math.round(a.ty), walkPhase: a.walkPhase, seed: a.seed,
+      z: a.z, vx: a.vx, vy: a.vy, vz: a.vz,
     })),
     resourceNodes: engine.resources.map((r) => ({
-      id: r.id, kind: r.kind, x: Math.round(r.x), y: Math.round(r.y), amount: r.amount,
+      id: r.id, kind: r.kind, x: Math.round(r.x), y: Math.round(r.y),
+      amount: r.amount, phase: r.phase,
     })),
     fogRLE: engine.fog.serializeRLE(),
     camera: { cx: engine.camera.cx, cy: engine.camera.cy, mode: engine.camera.mode },
     selectedAntId: engine.selectedAntId,
     gameOver: engine.gameOver,
+    totalsByResource: { ...engine.totals.byResource },
+    totalsByEnemy: { ...engine.totals.byEnemy },
+    missionsProgress: { ...engine.missionsProgress },
+    missionsDone: [...engine.missionsDone],
+    achievementsDone: [...engine.achievementsDone],
+    rebirths: engine.rebirths,
+    ownedAnts: { ...engine.ownedAnts },
+    respawnQueue: engine.respawnQueue.map((q) => ({ cls: q.cls, t: q.t })),
   };
 }
 
 export function writeSave(save: RunSaveV2): void {
   const json = JSON.stringify(save);
   const env: SaveEnvelope = {
-    v: 2,
+    v: 3,
     checksum: SAVE.USE_CHECKSUM ? checksum(json) : '',
     data: save,
   };
@@ -142,11 +165,11 @@ export function loadSave(): RunSaveV2 | null {
   if (!raw) return null;
   try {
     const env = JSON.parse(raw) as SaveEnvelope;
-    if (env.v !== 2 || !env.data || env.data.version !== 2) return null;
+    if (env.v < 2 || env.v > 3 || !env.data) return null;
     if (SAVE.USE_CHECKSUM && env.checksum && env.checksum !== checksum(JSON.stringify(env.data))) {
       return null;
     }
-    return env.data;
+    return { ...env.data, version: env.data.version === 3 ? 3 : 2 };
   } catch {
     return null;
   }
@@ -155,7 +178,7 @@ export function loadSave(): RunSaveV2 | null {
 // ── restauração ───────────────────────────────────────────────────
 
 export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
-  if (save.version !== 2) return false;
+  if (save.version !== 2 && save.version !== 3) return false;
 
   engine.gameOver = save.gameOver;
   engine.wallet = { ...save.wallet };
@@ -165,7 +188,17 @@ export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
   engine.mods = modsFrom(engine.upgrades);
   engine.unlockedMaps = [...save.unlockedMaps];
   engine.wavesByMap = { ...save.wavesByMap };
-  engine.totals = { ...save.totals };
+  engine.totals = {
+    ...save.totals,
+    byResource: { ...(save.totalsByResource ?? {}) },
+    byEnemy: { ...(save.totalsByEnemy ?? {}) },
+  };
+  engine.missionsProgress = { ...(save.missionsProgress ?? {}) };
+  engine.missionsDone = [...(save.missionsDone ?? [])];
+  engine.achievementsDone = [...(save.achievementsDone ?? [])];
+  engine.rebirths = save.rebirths ?? 0;
+  engine.ownedAnts = { ...(save.ownedAnts ?? { worker: 0, soldier: 0, scout: 0 }) };
+  engine.respawnQueue = (save.respawnQueue ?? []).map((q) => ({ cls: q.cls, t: q.t }));
   engine.queen = { ...save.queen };
   engine.nestHp = save.nestHp;
   engine.wave = { ...save.wave };
@@ -180,8 +213,10 @@ export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
   engine.h = world.h;
   engine.props = world.props;
   engine.enemies = world.ambientEnemies;
-  engine.nest = { x: world.nestX, y: world.nestY, hp: save.nestHp, hpMax: 400 };
-  engine.resources = save.resourceNodes.map((r) => ({ ...r }));
+  engine.nest = { x: world.nestX, y: world.nestY, hp: save.nestHp, hpMax: engine.nestHpMax() };
+  engine.resources = save.resourceNodes.map((r) => ({
+    ...r, phase: r.phase ?? 0,
+  }));
   engine.fog = FogOfWar.fromRLE(world.w, world.h, save.fogRLE);
   engine.camera.setWorldSize(world.w, world.h);
   engine.camera.cx = save.camera.cx;

@@ -5,6 +5,7 @@
  * sprites extraídos do HTML, inimigos-emoji, chefe com halo pulsante.
  */
 import { ANTS, ENEMIES, MAPS, PALETTE, SPRITE_DRAW, WORLD } from '../core/constants';
+import { BOSS_SMASH } from '../core/constants';
 import type { Scene } from '../core/types';
 import type { Camera } from './Camera';
 import { drawAnt, drawEmoji, drawEnemyFrames, drawSprite, type SpriteSet } from './sprites';
@@ -23,6 +24,13 @@ export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private canvas: HTMLCanvasElement;
   private onResize: () => void;
+  /** [O] nuvens à deriva (screen-space) */
+  private clouds = Array.from({ length: 5 }, (_, i) => ({
+    speed: 14 + i * 5,
+    x: Math.random(),
+    y: 0.06 + i * 0.17,
+    scale: 0.9 + (i % 3) * 0.35,
+  }));
 
   constructor(canvas: HTMLCanvasElement, private camera: Camera, private sprites: SpriteSet | null) {
     this.canvas = canvas;
@@ -62,7 +70,10 @@ export class Renderer {
     const z = camera.zoom * dpr;
     const camLeft = Math.round(camera.left);
     const camTop = Math.round(camera.top);
-    ctx.setTransform(z, 0, 0, z, -camLeft * z, -camTop * z);
+    const sh = scene.shake;
+    const shX = sh > 0 ? (Math.random() - 0.5) * 14 * sh : 0;
+    const shY = sh > 0 ? (Math.random() - 0.5) * 14 * sh : 0;
+    ctx.setTransform(z, 0, 0, z, (-camLeft + shX) * z, (-camTop + shY) * z);
     ctx.imageSmoothingEnabled = false;
 
     const view: View = {
@@ -74,7 +85,44 @@ export class Renderer {
 
     this.drawGround(ctx, scene, view);
     this.drawSorted(ctx, scene, view);
+    this.drawSmashFx(ctx, scene);
     this.drawFog(ctx, scene, view);
+    this.drawClouds(ctx);
+  }
+
+  /** [O] anel do smash do chefe */
+  private drawSmashFx(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    for (const f of scene.smashFx) {
+      const k = 1 - f.t / BOSS_SMASH.RING_SEC;
+      const r = 40 + k * (BOSS_SMASH.RADIUS + 40);
+      ctx.strokeStyle = `rgba(217, 74, 59, ${0.7 * (1 - k)})`;
+      ctx.lineWidth = 6 * (1 - k) + 2;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  /** [O] nuvens à deriva cobrindo a tela (screen-space) */
+  private drawClouds(ctx: CanvasRenderingContext2D): void {
+    const spr = this.sprites?.cloud;
+    if (!spr) return;
+    const vw = this.camera.vw;
+    const vh = this.camera.vh;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const dpr = this.canvas.width / (this.canvas.clientWidth || 1);
+    ctx.scale(dpr, dpr);
+    ctx.globalAlpha = 0.45;
+    const t = performance.now() / 1000;
+    for (const c of this.clouds) {
+      const w = vw * 0.16 * c.scale;
+      const h = w * (spr.height / spr.width);
+      const x = (((c.x + (t * c.speed) / vw) % 1.3) - 0.15) * vw;
+      const y = c.y * vh + Math.sin(t * 0.3 + c.speed) * vh * 0.03;
+      ctx.drawImage(spr, x - w / 2, y, w, h);
+    }
+    ctx.restore();
   }
 
   /** [O] chão quadriculado em 2 tons (célula 48, como a névoa). */
@@ -128,7 +176,7 @@ export class Renderer {
     for (const it of items) {
       switch (it.kind) {
         case 'prop': this.drawProp(ctx, it.p); break;
-        case 'res': this.drawResource(ctx, it.r); break;
+        case 'res': this.drawResource(ctx, it.r, scene.timeSec); break;
         case 'nest': this.drawNest(ctx, scene); break;
         case 'ant': this.drawAntEntity(ctx, it.a, scene.selectedAntId === it.a.id); break;
         case 'enemy': this.drawEnemyEntity(ctx, it.e, scene.timeSec); break;
@@ -196,16 +244,17 @@ export class Renderer {
     }
   }
 
-  private drawResource(ctx: CanvasRenderingContext2D, r: ResourceNode): void {
+  private drawResource(ctx: CanvasRenderingContext2D, r: ResourceNode, timeSec: number): void {
     const s = this.sprites;
     if (!s) return;
+    const bob = Math.sin(timeSec * 2 + r.phase) * 3;
     // folha e cogumelo têm sprite; demais são emoji (como no original)
-    if (r.kind === 'leaf' && s.leaf) drawSprite(ctx, s.leaf, r.x, r.y, SPRITE_DRAW.LEAF);
-    else if (r.kind === 'mushroom' && s.mushroom) drawSprite(ctx, s.mushroom, r.x, r.y, SPRITE_DRAW.MUSHROOM);
+    if (r.kind === 'leaf' && s.leaf) drawSprite(ctx, s.leaf, r.x, r.y + bob, SPRITE_DRAW.LEAF);
+    else if (r.kind === 'mushroom' && s.mushroom) drawSprite(ctx, s.mushroom, r.x, r.y + bob, SPRITE_DRAW.MUSHROOM);
     else {
       const icon = r.kind === 'cactus' ? '🌵' : r.kind === 'banana' ? '🍌'
         : r.kind === 'flower' ? '🌸' : '💎';
-      drawEmoji(ctx, icon, r.x, r.y, 30);
+      drawEmoji(ctx, icon, r.x, r.y + bob, 30);
     }
   }
 
@@ -239,7 +288,7 @@ export class Renderer {
     const frames = s.antFrames[a.cls];
     // carga carregada: pequena folha sobre a formiga
     if (a.carrying > 0 && s.leaf) drawSprite(ctx, s.leaf, a.x - a.dir * 6, a.y - 12, 12);
-    drawAnt(ctx, frames, a.x, a.y, a.dir, a.walkPhase, ANTS[a.cls].size);
+    drawAnt(ctx, frames, a.x, a.y, a.dir, a.walkPhase, ANTS[a.cls].size, a.z);
   }
 
   private drawEnemyEntity(ctx: CanvasRenderingContext2D, e: Enemy, timeSec: number): void {

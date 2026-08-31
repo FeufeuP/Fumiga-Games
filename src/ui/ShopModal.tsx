@@ -57,7 +57,11 @@ export default function ShopModal({ engine, hud, onClose }: Props) {
           {items.map((u) => {
             const cost = hud.shopCosts[u.id];
             const bought = hud.upgrades[u.id] ?? 0;
-            const affordable = cost && !cost.maxed && (hud.resources[cost.kind] ?? 0) >= cost.amount;
+            const affordable = cost && !cost.maxed && (
+              cost.multi
+                ? cost.multi.every((c) => (hud.resources[c.kind] ?? 0) >= c.amount)
+                : (hud.resources[cost.kind] ?? 0) >= cost.amount
+            );
             return (
               <button
                 key={u.id}
@@ -76,7 +80,9 @@ export default function ShopModal({ engine, hud, onClose }: Props) {
                 <div className={styles.itemCost}>
                   {cost?.maxed
                     ? 'MÁXIMO'
-                    : `${RESOURCES[cost?.kind ?? 'leaf'].icon} ${cost?.amount ?? '—'}`}
+                    : cost?.multi
+                      ? cost.multi.map((c) => `${RESOURCES[c.kind].icon}${c.amount}`).join(' ')
+                      : `${RESOURCES[cost?.kind ?? 'leaf'].icon} ${cost?.amount ?? '—'}`}
                 </div>
               </button>
             );

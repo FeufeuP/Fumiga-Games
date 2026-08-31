@@ -4,7 +4,8 @@
  * regeneração/reparo do ninho, XP/níveis, exploração e desbloqueio de mapas.
  */
 import {
-  ENEMIES, ENGINE, MAPS, MAP_UNLOCK, NEST, WAVES, XP,
+  ANT_RESPAWN, BOSS_SMASH, ENEMIES, ENGINE, MAPS, MAP_UNLOCK, NEST,
+  RESOURCE_REGEN, RALLY, WAVES, XP,
   levelFromXp, type EnemyKind, type MapId, type ResourceKind,
 } from '../core/constants';
 import { updateAnt, revealRadiusOf } from '../entities/ants';
@@ -46,6 +47,26 @@ export interface SimHost extends AntWorld {
   onMapUnlocked(mapId: MapId): void;
   rebuildResourceIndex(): void;
   recomputeFogActive(): void;
+
+  // ── ciclo A [O] ──────────────────────────────────────────────────
+  /** contagem de formigas por classe (estado, não derivada) */
+  ownedAnts: Record<AntClass, number>;
+  /** fila do cemitério: {cls, t} */
+  respawnQueue: Array<{ cls: AntClass; t: number }>;
+  /** buffs/cds do rally */
+  rally: { attackBuffT: number; collectBuffT: number; attackCd: number; collectCd: number };
+  /** chefe: aggro 4s pós-dano e smash após o 1º golpe */
+  bossAggroT: number;
+  bossFirstHit: boolean;
+  bossThrowT: number;
+  smashFx: Array<{ x: number; y: number; t: number }>;
+  shake: number;
+  /** regeneração de recursos */
+  regenT: number;
+  maxRes: Partial<Record<ResourceKind, number>>;
+  spawnResource(kind: ResourceKind): void;
+  killAnt(a: Ant): void;
+  onAntRespawned(cls: AntClass): void;
 }
 
 export function stepSimulation(host: SimHost, dt: number): void {
@@ -56,10 +77,22 @@ export function stepSimulation(host: SimHost, dt: number): void {
 
   // ── formigas ─────────────────────────────────────────────────────
   for (const a of host.ants) updateAnt(a, host, dt);
+  updateAntFlight(host, dt);
   if (host.tick % ENGINE.SEPARATION_EVERY_STEPS === 0) {
     applySeparation(host.ants, dt * ENGINE.SEPARATION_EVERY_STEPS, 14);
   }
   for (const a of host.ants) clampToWorld(a, host.w, host.h);
+
+  // ── timers do ciclo A [O] ────────────────────────────────────────
+  updateRally(host, dt);
+  updateBossTimers(host, dt);
+  updateRespawnQueue(host, dt);
+  updateResourceRegen(host, dt);
+  for (const f of host.smashFx) f.t -= dt;
+  if (host.smashFx.some((f) => f.t <= 0)) {
+    host.smashFx = host.smashFx.filter((f) => f.t > 0);
+  }
+  host.shake = Math.max(0, host.shake - dt * 1.6);
 
   // ── inimigos (morta a formiga, sai da lista) ─────────────────────
   for (const e of host.enemies) {
@@ -74,6 +107,9 @@ export function stepSimulation(host: SimHost, dt: number): void {
     host.enemies = host.enemies.filter((e) => e.hp > 0);
   }
   if (host.ants.some((a) => a.hp <= 0)) {
+    for (const a of host.ants) {
+      if (a.hp <= 0) host.killAnt(a);
+    }
     host.ants = host.ants.filter((a) => a.hp > 0);
   }
 
@@ -251,3 +287,118 @@ export function makeBoss(host: SimHost): Enemy {
 }
 
 export { ENEMIES };
+
+// ═════════════════════ CICLO A [O] ═════════════════════════════════
+
+/** Física de voo: formiga no ar (z>0) segue balística, sem agir. */
+function updateAntFlight(host: SimHost, dt: number): void {
+  const G = 900;
+  for (const a of host.ants) {
+    if (a.z <= 0 && a.vz <= 0) continue;
+    a.x += a.vx * dt;
+    a.y += a.vy * dt;
+    a.z += a.vz * dt;
+    a.vz -= G * dt;
+    a.walkPhase += 12 * dt; // patas pedalando no ar
+    if (a.x < 8) { a.x = 8; a.vx = Math.abs(a.vx); }
+    if (a.y < 8) { a.y = 8; a.vy = Math.abs(a.vy); }
+    if (a.x > host.w - 8) { a.x = host.w - 8; a.vx = -Math.abs(a.vx); }
+    if (a.y > host.h - 8) { a.y = host.h - 8; a.vy = -Math.abs(a.vy); }
+    if (a.z <= 0) {
+      a.z = 0; a.vx = 0; a.vy = 0; a.vz = 0;
+      a.state = 'idle';
+      a.targetResId = null;
+      a.targetEnemyId = null;
+    }
+  }
+}
+
+/** Rally: decai buffs e cooldowns. */
+function updateRally(host: SimHost, dt: number): void {
+  const r = host.rally;
+  r.attackBuffT = Math.max(0, r.attackBuffT - dt);
+  r.collectBuffT = Math.max(0, r.collectBuffT - dt);
+  r.attackCd = Math.max(0, r.attackCd - dt);
+  r.collectCd = Math.max(0, r.collectCd - dt);
+}
+
+/** Chefe: aggro da barra + smash a cada 15s após o 1º golpe. */
+function updateBossTimers(host: SimHost, dt: number): void {
+  host.bossAggroT = Math.max(0, host.bossAggroT - dt);
+  const boss = host.boss;
+  if (!boss || !host.bossFirstHit) return;
+  host.bossThrowT -= dt;
+  if (host.bossThrowT <= 0) {
+    host.bossThrowT = BOSS_SMASH.INTERVAL_SEC;
+    bossSmash(host, boss);
+  }
+}
+
+/** [O] bossSmash: dano + arremesso em área de 90px. */
+function bossSmash(host: SimHost, boss: Enemy): void {
+  host.shake = Math.max(host.shake, 1);
+  host.smashFx.push({ x: boss.x, y: boss.y, t: BOSS_SMASH.RING_SEC });
+  for (const a of host.ants) {
+    if (Math.hypot(a.x - boss.x, a.y - boss.y) > BOSS_SMASH.RADIUS) continue;
+    host.damageAnt(a.id, boss.dmg, boss.kind);
+    if (a.hp <= 0) continue; // morreu com o golpe
+    const dx = a.x - boss.x;
+    const dy = a.y - boss.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const kb = BOSS_SMASH.KNOCKBACK_MIN + host.rng.next() * BOSS_SMASH.KNOCKBACK_RANGE;
+    a.vx = (dx / d) * kb;
+    a.vy = (dy / d) * kb;
+    a.vz = BOSS_SMASH.KNOCKUP_MIN + host.rng.next() * BOSS_SMASH.KNOCKUP_RANGE;
+    a.z = Math.max(a.z, 1);
+    a.targetResId = null;
+    a.targetEnemyId = null;
+  }
+}
+
+/** [O] cemitério: formigas renascem (YA×(1−0.3·upgrade), mín. 3s). */
+function updateRespawnQueue(host: SimHost, dt: number): void {
+  for (let i = host.respawnQueue.length - 1; i >= 0; i--) {
+    const q = host.respawnQueue[i] as { cls: AntClass; t: number };
+    q.t -= dt;
+    if (q.t <= 0) {
+      host.respawnQueue.splice(i, 1);
+      host.spawnAnt(q.cls);
+      host.onAntRespawned(q.cls);
+    }
+  }
+}
+
+/** [O] regeneração de recursos: até 2/tipo a cada 0.8s até maxRes×fator. */
+function updateResourceRegen(host: SimHost, dt: number): void {
+  host.regenT -= dt;
+  if (host.regenT > 0) return;
+  host.regenT = RESOURCE_REGEN.INTERVAL_SEC;
+
+  const counts: Partial<Record<ResourceKind, number>> = {};
+  for (const r of host.resources) {
+    if (r.amount > 0) counts[r.kind] = (counts[r.kind] ?? 0) + 1;
+  }
+  const factor = Math.min(1, Math.max(RESOURCE_REGEN.FACTOR_MIN, host.exploredPct / 100));
+  for (const kind of Object.keys(host.maxRes) as ResourceKind[]) {
+    const target = Math.round((host.maxRes[kind] ?? 0) * factor);
+    const deficit = target - (counts[kind] ?? 0);
+    for (let i = 0; i < Math.min(RESOURCE_REGEN.MAX_PER_TICK, deficit); i++) {
+      host.spawnResource(kind);
+    }
+  }
+  host.rebuildResourceIndex();
+}
+
+/** Tempo de respawn [O]: YA×(1−0.3·upgrade), mínimo 3s. */
+export function respawnSeconds(respawnLevel: number): number {
+  return Math.max(
+    ANT_RESPAWN.MIN_SEC,
+    ANT_RESPAWN.BASE_SEC * (1 - ANT_RESPAWN.PER_LEVEL_MULT * respawnLevel),
+  );
+}
+
+/** Rally: multiplicador do cooldown de ataque dos soldados. */
+export function soldierAttackCdMult(host: SimHost): number {
+  return host.rally.attackBuffT > 0 ? RALLY.ATTACK_SPEED_MULT : 1;
+}
+

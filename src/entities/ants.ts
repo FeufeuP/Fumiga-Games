@@ -41,6 +41,10 @@ export function createAnt(cls: AntClass, x: number, y: number, rnd: () => number
     ty: y,
     walkPhase: 0,
     seed: rnd(),
+    z: 0,
+    vx: 0,
+    vy: 0,
+    vz: 0,
   };
 }
 
@@ -53,6 +57,10 @@ export function antSpeed(a: Ant, w: AntWorld): number {
   // [O] base 82 (scout ×1.35) · upgrade speed +10%/nível · carregando ×0.9
   let v = ANTS[a.cls].speed * w.mods.speedMult;
   if (a.carrying > 0) v *= ANT_SPRITE.CARRY_SLOWDOWN;
+  // [O] rally COLETA!: operárias ×1.6 por 8s
+  if (a.cls === 'worker' && w.buffs.collectSpeedMult !== 1) {
+    v *= w.buffs.collectSpeedMult;
+  }
   return v;
 }
 
@@ -237,7 +245,7 @@ export function updateSoldier(a: Ant, w: AntWorld, dt: number): void {
         const { dmg, crit } = antDamage(a, w);
         w.damageEnemy(enemy, dmg, 'soldier');
         if (crit) w.events.emit('toast', { text: 'Golpe crítico!', kind: 'info' });
-        a.attackCd = BEHAVIOR.ATTACK_COOLDOWN_SEC / w.mods.attackSpeedMult;
+        a.attackCd = (BEHAVIOR.ATTACK_COOLDOWN_SEC * w.buffs.attackCdMult) / w.mods.attackSpeedMult;
       }
       break;
     }
@@ -298,6 +306,7 @@ function pickScoutDestination(a: Ant, w: AntWorld): void {
 
 /** Despacho por classe — chamado pelo passo de simulação. */
 export function updateAnt(a: Ant, w: AntWorld, dt: number): void {
+  if (a.z > 0) return; // voando com o smash do chefe — física cuida
   if (a.hp <= 0) return;
   if (a.hp < a.hpMax && w.mods.healPerSec > 0) {
     a.hp = Math.min(a.hpMax, a.hp + w.mods.healPerSec * dt);

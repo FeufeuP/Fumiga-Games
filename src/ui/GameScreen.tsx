@@ -21,7 +21,13 @@ interface Props {
 export default function GameScreen({ engine, hud }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef({ down: false, dragged: false, x: 0, y: 0 });
-  const [modal, setModal] = useState<'none' | 'shop' | 'maps'>('none');
+  const [modal, setModal] = useState<'none' | 'shop' | 'maps' | 'pause'>('none');
+
+  const openPause = (): void => {
+    setModal('pause');
+    engine.clock.paused = true;
+    engine.publishHud();
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -37,7 +43,7 @@ export default function GameScreen({ engine, hud }: Props) {
       if (k === 'c') engine.centerCamera();
       if (k === 'f') engine.setCameraMode(hud.cameraMode === 'follow' ? 'free' : 'follow');
       if (k === 'n') engine.cycleAnt();
-      if (k === 'p') engine.togglePause();
+      if (k === 'p' && modal === 'none' && !hud.gameOver) openPause();
       if (k === 'l' && !hud.gameOver) setModal((m) => (m === 'shop' ? 'none' : 'shop'));
       if (k === 'm' && !hud.gameOver) setModal((m) => (m === 'maps' ? 'none' : 'maps'));
       if (k === 'escape') setModal('none');
@@ -90,15 +96,80 @@ export default function GameScreen({ engine, hud }: Props) {
         onPointerUp={onPointerUp}
         onPointerCancel={() => (dragRef.current.down = false)}
       />
-      <Hud hud={hud} onOpenShop={() => setModal('shop')} onOpenMaps={() => setModal('maps')} />
-      {!hud.gameOver && <CameraControls engine={engine} hud={hud} />}
+      <Hud
+        hud={hud}
+        onOpenShop={() => setModal('shop')}
+        onOpenMaps={() => setModal('maps')}
+        onRallyAttack={() => engine.rallyAttack()}
+        onRallyCollect={() => engine.rallyCollect()}
+      />
+      {!hud.gameOver && <CameraControls engine={engine} hud={hud} onOpenPause={openPause} />}
       {modal === 'shop' && !hud.gameOver && (
         <ShopModal engine={engine} hud={hud} onClose={() => setModal('none')} />
       )}
       {modal === 'maps' && !hud.gameOver && (
         <MapsModal engine={engine} hud={hud} onClose={() => setModal('none')} />
       )}
+      {modal === 'pause' && !hud.gameOver && (
+        <PauseMenu engine={engine} hud={hud} onClose={() => { engine.clock.paused = false; setModal('none'); }} />
+      )}
       {hud.gameOver && <GameOverOverlay engine={engine} hud={hud} />}
+    </div>
+  );
+}
+
+function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState; onClose: () => void }) {
+  const [tab, setTab] = useState<'stats' | 'ach' | 'score' | null>(null);
+  const close = () => { setModalExit(); };
+  const setModalExit = () => { onClose(); engine.backToMenu(); };
+  return (
+    <div className={styles.pauseOverlay}>
+      <div className={styles.pausePanel}>
+        <h2>{tab ? (tab === 'stats' ? 'ESTATÍSTICAS' : tab === 'ach' ? 'CONQUISTAS' : 'PLACAR') : 'PAUSADO'}</h2>
+        {tab === null && (
+          <div className={styles.pauseBtns}>
+            <button className={styles.btnPrimary} onClick={onClose}>CONTINUAR</button>
+            <button className={styles.btn} onClick={() => setTab('stats')}>ESTATÍSTICAS</button>
+            <button className={styles.btn} onClick={() => setTab('ach')}>CONQUISTAS</button>
+            <button className={styles.btn} onClick={() => setTab('score')}>PLACAR</button>
+            <button className={styles.btn} onClick={close}>SAIR PARA O MENU</button>
+          </div>
+        )}
+        {tab === 'stats' && (
+          <div className={styles.stats}>
+            <span>Nível: {hud.level} · Renascimentos: {hud.rebirths}</span>
+            <span>Formigas: {hud.ants.worker + hud.ants.soldier + hud.ants.scout}</span>
+            <span>Recursos entregues: {hud.totals.delivered}</span>
+            <span>Inimigos derrotados: {hud.totals.enemiesKilled}</span>
+            <span>Chefes derrotados: {hud.totals.bossesKilled}</span>
+            <span>Missões concluídas: {hud.missions.done}/{hud.missions.total}</span>
+            <span>Conquistas desbloqueadas: {hud.achievements.done}/{hud.achievements.total}</span>
+          </div>
+        )}
+        {tab === 'ach' && (
+          <div className={styles.achList}>
+            {hud.achievements.progress.map((a) => (
+              <div key={a.id} className={styles.achRow}>
+                <span>{a.done ? '🏆' : '🔒'} {a.title}</span>
+                <span>{a.value}/{a.goal}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {tab === 'score' && (
+          <div className={styles.stats}>
+            <span>Missões ×{100}: {hud.missions.done} × 100 = {hud.missions.done * 100}</span>
+            <span>Renascimentos ×{200}: {hud.rebirths} × 200 = {hud.rebirths * 200}</span>
+            <span><strong>PLACAR: {hud.score} pontos</strong></span>
+          </div>
+        )}
+        {tab !== null && (
+          <div className={styles.pauseBtns}>
+            <button className={styles.btnPrimary} onClick={() => setTab(null)}>VOLTAR</button>
+            <button className={styles.btn} onClick={close}>SAIR PARA O MENU</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -117,6 +188,10 @@ function GameOverOverlay({ engine, hud }: { engine: GameEngine; hud: HudState })
           <span>Inimigos derrotados: {hud.totals.enemiesKilled}</span>
           <span>Chefes derrotados: {hud.totals.bossesKilled}</span>
           <span>Nível da colônia: {hud.level}</span>
+          <span>Missões concluídas: {hud.missions.done}/{hud.missions.total}</span>
+          <span>Conquistas: {hud.achievements.done}/{hud.achievements.total}</span>
+          <span>Renascimentos: {hud.rebirths}</span>
+          <span>PLACAR: {hud.score} pontos</span>
         </div>
         <div className={styles.gameOverBtns}>
           <button className={styles.btn} onClick={() => engine.backToMenu()}>MENU</button>

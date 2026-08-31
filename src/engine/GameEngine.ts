@@ -4,9 +4,14 @@
  * chefes, fome da Rainha, desbloqueio de mapas por exploração.
  */
 import {
-  ANTS, ECONOMY, ENGINE, FOG, MAPS, NEST, POPULATION, RESOURCES, SAVE, UPGRADES, WAVES, XP, upgradeCost,
+  ANTS, BOSS, ECONOMY, ENGINE, FOG, MAPS, NEST, POPULATION, RESOURCES, RALLY,
+  RESOURCE_REGEN, SAVE, SCORE, UPGRADES, WAVES, XP,
+  nesthpCost, upgradeCost,
   type AntClass, type EnemyKind, type MapId, type ResourceKind,
 } from '../core/constants';
+import {
+  ACHIEVEMENTS, MISSIONS, trackValue, type MissionTotals,
+} from '../systems/missions';
 import { Rng } from '../core/rng';
 import { EventBus } from '../core/events';
 import { Store } from '../core/store';
@@ -17,7 +22,7 @@ import type {
 } from '../core/types';
 import { SpatialHash } from './spatialHash';
 import { FogOfWar } from './fogOfWar';
-import { stepSimulation, makeWaveEnemy, makeBoss } from './update';
+import { stepSimulation, makeWaveEnemy, makeBoss, respawnSeconds } from './update';
 import { generateWorld } from '../world/world';
 import { createAnt, resetAntIds } from '../entities/ants';
 import { resetEnemyIds } from '../entities/enemies';
@@ -61,6 +66,12 @@ function emptyHud(): HudState {
     shopCosts: {},
     hasSave: false,
     toasts: [],
+    rally: { attackCd: 0, collectCd: 0, attackBuff: 0, collectBuff: 0 },
+    bossAggro: false,
+    missions: { done: 0, total: 0, progress: [] },
+    achievements: { done: 0, total: 0, progress: [] },
+    rebirths: 0,
+    score: 0,
   };
 }
 
@@ -102,12 +113,34 @@ export class GameEngine implements AntWorld, Scene {
   level = 1;
   exploredPct = 0;
   unlockedMaps: MapId[] = ['campo'];
-  totals = { delivered: 0, enemiesKilled: 0, bossesKilled: 0 };
+  totals = {
+    delivered: 0, enemiesKilled: 0, bossesKilled: 0,
+    byResource: {} as Partial<Record<ResourceKind, number>>,
+    byEnemy: {} as Partial<Record<EnemyKind, number>>,
+  };
   upgrades: UpgradeLevels = emptyUpgrades();
   mods: AntMods = modsFrom(emptyUpgrades());
   queen = createQueenState();
   nestHp: number = NEST.HP_MAX;
   wavesByMap: Partial<Record<MapId, number>> = {};
+
+  // ── ciclo A [O] ──────────────────────────────────────────────────
+  ownedAnts: Record<AntClass, number> = { worker: 0, soldier: 0, scout: 0 };
+  respawnQueue: Array<{ cls: AntClass; t: number }> = [];
+  reviveEvents: Array<{ id: number; cls: AntClass; t: number }> = [];
+  rally = { attackBuffT: 0, collectBuffT: 0, attackCd: 0, collectCd: 0 };
+  bossAggroT = 0;
+  bossFirstHit = false;
+  bossThrowT = 0;
+  smashFx: Array<{ x: number; y: number; t: number }> = [];
+  shake = 0;
+  regenT = RESOURCE_REGEN.INTERVAL_SEC;
+  nextResourceId = 100000;
+  maxRes: Partial<Record<ResourceKind, number>> = {};
+  missionsProgress: Record<string, number> = {};
+  missionsDone: string[] = [];
+  achievementsDone: string[] = [];
+  rebirths = 0;
 
   // ── loop ──────────────────────────────────────────────────────────
   private running = false;
@@ -151,6 +184,9 @@ export class GameEngine implements AntWorld, Scene {
       }
     }
     this.totals.delivered += units;
+    this.totals.byResource[kind] = (this.totals.byResource[kind] ?? 0) + units;
+    this.progressResource(kind, units);
+    this.checkAchievements();
     this.audio.play('deposit');
     this.events.emit('food_deposited', { units, food: units * RESOURCES[kind].food, by });
   }
@@ -188,10 +224,21 @@ export class GameEngine implements AntWorld, Scene {
 
   damageEnemy(e: Enemy, dmg: number, _by: AntClass): void {
     e.hp -= dmg;
+    if (e.boss && e.hp > 0) {
+      // [O] bossAggroT=4 e o smash só começa após o 1º golpe
+      this.bossAggroT = BOSS.AGGRO_SEC;
+      if (!this.bossFirstHit) {
+        this.bossFirstHit = true;
+        this.bossThrowT = 15;
+      }
+    }
     if (e.hp <= 0 && !e.boss) {
       // chefe é contabilizado em onBossDefeated (drops + XP)
       this.xp += e.xp;
       this.totals.enemiesKilled++;
+      this.totals.byEnemy[e.kind] = (this.totals.byEnemy[e.kind] ?? 0) + 1;
+      this.progressEnemy(e.kind);
+      this.checkAchievements();
     }
   }
 
@@ -221,6 +268,24 @@ export class GameEngine implements AntWorld, Scene {
     return this.enemies.find((e) => e.boss && e.hp > 0) ?? null;
   }
 
+  /** [O] buffs do rally lidos pelas formigas */
+  get buffs(): { collectSpeedMult: number; attackCdMult: number } {
+    return {
+      collectSpeedMult: this.rally.collectBuffT > 0 ? RALLY.COLLECT_SPEED_MULT : 1,
+      attackCdMult: this.rally.attackBuffT > 0 ? RALLY.ATTACK_SPEED_MULT : 1,
+    };
+  }
+
+  /** [O] placar: missões×100 + renascimentos×200 */
+  get score(): number {
+    return this.missionsDone.length * SCORE.PER_MISSION + this.rebirths * SCORE.PER_REBIRTH;
+  }
+
+  /** [O] qn + upgrades.nesthp × Er */
+  nestHpMax(): number {
+    return NEST.HP_MAX + (this.upgrades.nesthp ?? 0) * NEST.HP_PER_UPGRADE;
+  }
+
   spawnAnt(cls: AntClass): void {
     const ang = this.rng.next() * Math.PI * 2;
     const dist = 24 + this.rng.next() * 36;
@@ -229,6 +294,68 @@ export class GameEngine implements AntWorld, Scene {
     const ant = createAnt(cls, x, y, () => this.rng.next());
     ant.hp = ant.hpMax = Math.round(ANTS[cls].hp * this.mods.hpMult);
     this.ants.push(ant);
+  }
+
+  /** [O] killAnt: carga cai no chão + fila do cemitério */
+  killAnt(a: Ant): void {
+    for (let i = 0; i < a.carrying; i++) {
+      this.resources.push({
+        id: this.nextResourceId++,
+        kind: a.carryKind ?? 'leaf',
+        x: a.x + (this.rng.next() - 0.5) * 20,
+        y: a.y + (this.rng.next() - 0.5) * 20,
+        amount: 1,
+        phase: this.rng.next() * Math.PI * 2,
+      });
+    }
+    this.respawnQueue.push({
+      cls: a.cls,
+      t: respawnSeconds(this.upgrades.respawn ?? 0),
+    });
+    this.audio.play('dead');
+  }
+
+  onAntRespawned(cls: AntClass): void {
+    this.reviveEvents.push({ id: this.toastSeq, cls, t: 0 });
+    if (this.reviveEvents.length > 12) this.reviveEvents.shift();
+  }
+
+  /** [O] spawnResource: nasce em área revelada, longe do ninho e de obstáculos */
+  spawnResource(kind: ResourceKind): void {
+    const minDist = 190;
+    for (let t = 0; t < 120; t++) {
+      const x = 50 + this.rng.next() * (this.w - 100);
+      const y = 50 + this.rng.next() * (this.h - 100);
+      if (Math.hypot(x - this.nest.x, y - this.nest.y) < minDist) continue;
+      if (!this.fog.isRevealed(x, y)) continue;
+      if (this.blocked(x, y)) continue;
+      this.resources.push({
+        id: this.nextResourceId++, kind, x, y, amount: 1,
+        phase: this.rng.next() * Math.PI * 2,
+      });
+      return;
+    }
+    // anel ao redor do ninho em ponto revelado [O fallback]
+    for (let t = 0; t < 120; t++) {
+      const ang = this.rng.next() * Math.PI * 2;
+      const dist = minDist + this.rng.next() * 140;
+      const x = this.nest.x + Math.cos(ang) * dist;
+      const y = this.nest.y + Math.sin(ang) * dist;
+      if (x < 30 || y < 30 || x > this.w - 30 || y > this.h - 30) continue;
+      if (!this.fog.isRevealed(x, y) || this.blocked(x, y)) continue;
+      this.resources.push({
+        id: this.nextResourceId++, kind, x, y, amount: 1,
+        phase: this.rng.next() * Math.PI * 2,
+      });
+      return;
+    }
+  }
+
+  private blocked(x: number, y: number): boolean {
+    for (const p of this.props) {
+      if (p.solid && Math.hypot(x - p.x, y - p.y) < p.r + 16) return true;
+    }
+    return false;
   }
 
   spawnWaveEnemy(power?: number): void {
@@ -267,6 +394,8 @@ export class GameEngine implements AntWorld, Scene {
     }
     this.xp += e.xp;
     this.totals.bossesKilled++;
+    this.progressBoss();
+    this.checkAchievements();
     this.audio.play('win');
     this.pushToast(`🏆 ${cfg.name} derrotado! +${e.xp} XP e recursos!`, 'success');
   }
@@ -354,18 +483,31 @@ export class GameEngine implements AntWorld, Scene {
     this.nest = { x: world.nestX, y: world.nestY, hp: this.nestHp, hpMax: NEST.HP_MAX };
     this.fog = new FogOfWar(world.w, world.h);
     this.camera.setWorldSize(world.w, world.h);
+    // [O] maxRes: teto de nós por tipo para a regeneração
+    this.maxRes = { [MAPS[mapId].resource]: MAPS[mapId].resourceCount };
+    this.nextResourceId = Math.max(
+      this.nextResourceId,
+      ...world.resources.map((r) => r.id + 1),
+    );
     this.rebuildResourceIndex();
   }
 
   private populate(): void {
     this.ants = [];
+    this.ownedAnts = { worker: 0, soldier: 0, scout: 0 };
+    const add = (cls: AntClass, n: number) => {
+      for (let i = 0; i < n; i++) {
+        this.ownedAnts[cls] += 1;
+        this.spawnAnt(cls);
+      }
+    };
     for (const [cls, n] of Object.entries(POPULATION.START) as Array<[AntClass, number]>) {
-      for (let i = 0; i < n; i++) this.spawnAnt(cls);
+      add(cls, n);
     }
     // formigas extras já compradas na loja
-    for (let i = 0; i < (this.upgrades.antlimit ?? 0) * 5; i++) this.spawnAnt('worker');
-    for (let i = 0; i < (this.upgrades.soldier ?? 0) * 5; i++) this.spawnAnt('soldier');
-    for (let i = 0; i < (this.upgrades.scout ?? 0) * 5; i++) this.spawnAnt('scout');
+    add('worker', (this.upgrades.antlimit ?? 0) * 5);
+    add('soldier', (this.upgrades.soldier ?? 0) * 5);
+    add('scout', (this.upgrades.scout ?? 0) * 5);
   }
 
   newGame(mapId: MapId = 'campo'): void {
@@ -384,12 +526,23 @@ export class GameEngine implements AntWorld, Scene {
       this.wallet[k as ResourceKind] = v ?? 0;
     }
     this.upgrades = emptyUpgrades();
-    this.mods = modsFrom(this.upgrades);
-    this.totals = { delivered: 0, enemiesKilled: 0, bossesKilled: 0 };
+    this.mods = modsFrom(this.upgrades, this.rebirths);
+    // [O] totais e conquistas são CUMULATIVOS (persistem entre runs);
+    // missões reiniciam a cada run/renascimento
     this.unlockedMaps = ['campo'];
     this.wavesByMap = {};
     this.queen = createQueenState();
     this.nestHp = NEST.HP_MAX;
+    this.missionsProgress = {};
+    this.missionsDone = [];
+    this.respawnQueue = [];
+    this.reviveEvents = [];
+    this.rally = { attackBuffT: 0, collectBuffT: 0, attackCd: 0, collectCd: 0 };
+    this.bossAggroT = 0;
+    this.bossFirstHit = false;
+    this.bossThrowT = 0;
+    this.smashFx = [];
+    this.shake = 0;
     this.wave = { num: 0, active: false, tSec: WAVES.CALM_SEC, spawned: 0, spawnT: 0 };
     this.rng = new Rng((Date.now() & 0x7fffffff) || 1);
 
@@ -444,15 +597,38 @@ export class GameEngine implements AntWorld, Scene {
     if (!def || !this.runActive || this.gameOver) return false;
     const bought = this.upgrades[id] ?? 0;
     if (bought >= def.max) return false;
-    const cost = upgradeCost(def, bought);
-    if (!this.takeResource(cost.kind, cost.amount)) return false;
+
+    // [O] nesthp custa VÁRIOS recursos (ob(l)); os demais, um só
+    if (def.multiCost) {
+      const costs = nesthpCost(bought);
+      if (!costs.every((c) => (this.wallet[c.kind] ?? 0) >= c.amount)) return false;
+      for (const c of costs) this.wallet[c.kind] -= c.amount;
+    } else {
+      const cost = upgradeCost(def, bought);
+      if (!this.takeResource(cost.kind, cost.amount)) return false;
+    }
 
     this.upgrades = { ...this.upgrades, [id]: bought + 1 };
-    this.mods = modsFrom(this.upgrades);
+    this.mods = modsFrom(this.upgrades, this.rebirths);
 
-    if (def.id === 'antlimit') for (let i = 0; i < 5; i++) this.spawnAnt('worker');
-    if (def.id === 'soldier') for (let i = 0; i < 5; i++) this.spawnAnt('soldier');
-    if (def.id === 'scout') for (let i = 0; i < 5; i++) this.spawnAnt('scout');
+    if (def.id === 'antlimit') {
+      this.ownedAnts.worker += 5;
+      for (let i = 0; i < 5; i++) this.spawnAnt('worker');
+    }
+    if (def.id === 'soldier') {
+      this.ownedAnts.soldier += 5;
+      for (let i = 0; i < 5; i++) this.spawnAnt('soldier');
+    }
+    if (def.id === 'scout') {
+      this.ownedAnts.scout += 5;
+      for (let i = 0; i < 5; i++) this.spawnAnt('scout');
+    }
+    if (def.id === 'nesthp') {
+      // [O] w.nestHp = qn + upgrades.nesthp × Er
+      const max = this.nestHpMax();
+      this.nest.hpMax = max;
+      this.nestHp = Math.min(max, this.nestHp + NEST.HP_PER_UPGRADE);
+    }
 
     this.audio.play('click');
     this.pushToast(`${def.name} — nível ${bought + 1}!`, 'success');
@@ -552,17 +728,141 @@ export class GameEngine implements AntWorld, Scene {
     this.keys.delete(key.toLowerCase());
   }
 
+  // ═════════════════════ MISSÕES/CONQUISTAS [O] ═════════════════════
+
+  private missionTotals(): MissionTotals {
+    return {
+      resources: this.totals.delivered,
+      enemies: this.totals.enemiesKilled,
+      bosses: this.totals.bossesKilled,
+      byResource: this.totals.byResource,
+      byEnemy: this.totals.byEnemy,
+    };
+  }
+
+  /** [O] progressResource: atualiza missões de recurso e completa as prontas */
+  progressResource(kind: ResourceKind, units: number): void {
+    for (const m of MISSIONS) {
+      if (this.missionsDone.includes(m.id)) continue;
+      if (m.track.type !== 'resource' || m.track.kind !== kind) continue;
+      this.missionsProgress[m.id] = (this.missionsProgress[m.id] ?? 0) + units;
+      if ((this.missionsProgress[m.id] ?? 0) >= m.goal) this.completeMission(m);
+    }
+  }
+
+  /** [O] progressEnemy */
+  progressEnemy(kind: EnemyKind): void {
+    for (const m of MISSIONS) {
+      if (this.missionsDone.includes(m.id)) continue;
+      if (m.track.type !== 'enemy' || m.track.kind !== kind) continue;
+      this.missionsProgress[m.id] = (this.missionsProgress[m.id] ?? 0) + 1;
+      if ((this.missionsProgress[m.id] ?? 0) >= m.goal) this.completeMission(m);
+    }
+  }
+
+  /** [O] progressBoss */
+  progressBoss(): void {
+    for (const m of MISSIONS) {
+      if (this.missionsDone.includes(m.id)) continue;
+      if (m.track.type !== 'bosses') continue;
+      this.missionsProgress[m.id] = (this.missionsProgress[m.id] ?? 0) + 1;
+      if ((this.missionsProgress[m.id] ?? 0) >= m.goal) this.completeMission(m);
+    }
+  }
+
+  private completeMission(m: (typeof MISSIONS)[number]): void {
+    this.missionsDone.push(m.id);
+    this.xp += m.rewardXp;
+    this.audio.play('win');
+    this.pushToast(`📜 Missão concluída: ${m.title}! +${m.rewardXp} XP`, 'success');
+  }
+
+  /** [O] checkAchievements: completam sozinhas, dão XP+recursos+formigas */
+  checkAchievements(): void {
+    const totals = this.missionTotals();
+    for (const a of ACHIEVEMENTS) {
+      if (this.achievementsDone.includes(a.id)) continue;
+      if (trackValue(a.track, totals) < a.goal) continue;
+      this.achievementsDone.push(a.id);
+      for (const [kind, n] of Object.entries(a.rewardResources)) {
+        this.wallet[kind as ResourceKind] += n ?? 0;
+      }
+      for (const [cls, n] of Object.entries(a.rewardAnts)) {
+        for (let i = 0; i < (n ?? 0); i++) {
+          this.ownedAnts[cls as AntClass] += 1;
+          this.spawnAnt(cls as AntClass);
+        }
+      }
+      this.xp += a.rewardXp;
+      this.audio.play('win');
+      this.pushToast(`🏆 Conquista: ${a.title}! +${a.rewardXp} XP`, 'success');
+    }
+  }
+
+  // ═════════════════════ RALLY / RENASCER [O] ═══════════════════════
+
+  /** [O] ATACAR!: 6s de buff, soldados partem para o inimigo mais próximo */
+  rallyAttack(): boolean {
+    if (!this.runActive || this.gameOver || this.rally.attackCd > 0) return false;
+    this.rally.attackBuffT = RALLY.ATTACK_BUFF_SEC;
+    this.rally.attackCd = RALLY.ATTACK_CD_SEC;
+    for (const a of this.ants) {
+      if (a.cls !== 'soldier' || a.z > 0) continue;
+      const enemy = this.nearestVisibleEnemy(a.x, a.y, 1e5);
+      if (enemy) {
+        a.targetEnemyId = enemy.id;
+        a.state = 'seekEnemy';
+        a.targetResId = null;
+      }
+    }
+    this.audio.play('click');
+    this.pushToast('⚔️ Soldados convocados ao ataque!', 'info');
+    this.publishHud();
+    return true;
+  }
+
+  /** [O] COLETA!: 8s de velocidade ×1.6 para as operárias */
+  rallyCollect(): boolean {
+    if (!this.runActive || this.gameOver || this.rally.collectCd > 0) return false;
+    this.rally.collectBuffT = RALLY.COLLECT_BUFF_SEC;
+    this.rally.collectCd = RALLY.COLLECT_CD_SEC;
+    this.audio.play('click');
+    this.pushToast('🍃 Operárias em ritmo de colheita!', 'info');
+    this.publishHud();
+    return true;
+  }
+
+  /** [O] Renascimento: zera a run e deixa bônus permanentes */
+  rebirth(): boolean {
+    if (!this.runActive) return false;
+    this.rebirths += 1;
+    // [O] x.missions={}, x.missionsDone=[] — conquistas e totais persistem
+    const rebirths = this.rebirths;
+    this.newGame('campo');
+    this.rebirths = rebirths;
+    this.mods = modsFrom(this.upgrades, this.rebirths);
+    this.audio.play('win');
+    this.pushToast(
+      `Renascimento ${this.rebirths}! A colônia volta mais forte.`,
+      'success',
+    );
+    this.publishHud();
+    return true;
+  }
+
   // ═════════════════════════ HUD ═══════════════════════════════════
 
   publishHud(): void {
-    const antsCount: Record<AntClass, number> = { worker: 0, soldier: 0, scout: 0 };
-    for (const a of this.ants) antsCount[a.cls]++;
+    const antsCount: Record<AntClass, number> = { ...this.ownedAnts };
 
     const shopCosts: HudState['shopCosts'] = {};
     for (const def of UPGRADES) {
       const bought = this.upgrades[def.id] ?? 0;
       const cost = upgradeCost(def, bought);
-      shopCosts[def.id] = { kind: cost.kind, amount: cost.amount, maxed: bought >= def.max };
+      shopCosts[def.id] = {
+        kind: cost.kind, amount: cost.amount, maxed: bought >= def.max,
+        multi: def.multiCost ? nesthpCost(bought) : undefined,
+      };
     }
 
     const boss = this.boss;
@@ -582,7 +882,7 @@ export class GameEngine implements AntWorld, Scene {
       queenHunger: this.queen.hunger,
       queenHungerMax: 100,
       nestHp: this.nestHp,
-      nestHpMax: NEST.HP_MAX,
+      nestHpMax: this.nestHpMax(),
       ants: antsCount,
       wave: { ...this.wave },
       boss: boss ? { name: MAPS[this.mapId].boss.name, hp: boss.hp, hpMax: boss.hpMax } : null,
@@ -594,6 +894,35 @@ export class GameEngine implements AntWorld, Scene {
       shopCosts,
       hasSave: saveExists(),
       toasts: [...this.toasts],
+      rally: {
+        attackCd: Math.ceil(this.rally.attackCd),
+        collectCd: Math.ceil(this.rally.collectCd),
+        attackBuff: Math.ceil(this.rally.attackBuffT),
+        collectBuff: Math.ceil(this.rally.collectBuffT),
+      },
+      bossAggro: this.bossAggroT > 0,
+      missions: {
+        done: this.missionsDone.length,
+        total: MISSIONS.length,
+        progress: MISSIONS.map((m) => ({
+          id: m.id, title: m.title, desc: m.desc,
+          value: Math.min(m.goal, this.missionsProgress[m.id] ?? 0),
+          goal: m.goal, rewardXp: m.rewardXp,
+          done: this.missionsDone.includes(m.id),
+        })),
+      },
+      achievements: {
+        done: this.achievementsDone.length,
+        total: ACHIEVEMENTS.length,
+        progress: ACHIEVEMENTS.map((a) => ({
+          id: a.id, title: a.title, desc: a.desc,
+          value: Math.min(a.goal, trackValue(a.track, this.missionTotals())),
+          goal: a.goal,
+          done: this.achievementsDone.includes(a.id),
+        })),
+      },
+      rebirths: this.rebirths,
+      score: this.score,
     });
   }
 }

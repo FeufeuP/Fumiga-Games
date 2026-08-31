@@ -19,6 +19,7 @@ class MockHost implements SimHost {
   rng = new Rng(42);
   events = new EventBus();
   mods = modsFrom(emptyUpgrades());
+  buffs = { collectSpeedMult: 1, attackCdMult: 1 };
   wallet: Record<ResourceKind, number> = { leaf: 0, mushroom: 0, cactus: 0, banana: 0, flower: 0, crystal: 0 };
   mapId: MapId = 'campo';
   w = 3400;
@@ -37,6 +38,18 @@ class MockHost implements SimHost {
   unlocked: MapId[] = ['campo'];
   levelUps: number[] = [];
   bossKills: string[] = [];
+
+  // ciclo A [O]
+  ownedAnts: Record<AntClass, number> = { worker: 0, soldier: 0, scout: 0 };
+  respawnQueue: Array<{ cls: AntClass; t: number }> = [];
+  rally = { attackBuffT: 0, collectBuffT: 0, attackCd: 0, collectCd: 0 };
+  bossAggroT = 0;
+  bossFirstHit = false;
+  bossThrowT = 0;
+  smashFx: Array<{ x: number; y: number; t: number }> = [];
+  shake = 0;
+  regenT = 0.8;
+  maxRes: Partial<Record<ResourceKind, number>> = { leaf: 100 };
 
   constructor() {
     this.fog = new FogOfWar(this.w, this.h);
@@ -69,7 +82,18 @@ class MockHost implements SimHost {
   damageAnt(): void { /* teste não usa */ }
   damageNest(dmg: number): void { this.nestHp = Math.max(0, this.nestHp - dmg); }
   spawnAnt(cls: AntClass): void {
+    this.ownedAnts[cls] += 1;
     this.ants.push(createAnt(cls, this.nest.x + 30, this.nest.y, () => this.rng.next()));
+  }
+  killAnt(a: Ant): void {
+    this.respawnQueue.push({ cls: a.cls, t: 15 });
+  }
+  onAntRespawned(): void { /* mock */ }
+  spawnResource(kind: ResourceKind): void {
+    this.resources.push({
+      id: 90000 + this.resources.length, kind,
+      x: this.nest.x + 200, y: this.nest.y + 200, amount: 1, phase: 0,
+    });
   }
   spawnWaveEnemy(power?: number): void { this.enemies.push(makeWaveEnemy(this, power)); }
   spawnBoss(): void { this.enemies.push(makeBoss(this)); }

@@ -34,6 +34,10 @@ export interface Ant {
   ty: number;
   walkPhase: number;
   seed: number;
+  z: number;              // altura (0 = no chão) — voa com o smash do chefe
+  vx: number;             // impulso horizontal do knockback
+  vy: number;
+  vz: number;
 }
 
 export type EnemyState = 'wander' | 'chase' | 'attack';
@@ -69,6 +73,7 @@ export interface ResourceNode {
   x: number;
   y: number;
   amount: number;
+  phase: number;          // [O] flutuação senoidal no desenho
 }
 
 export type PropKind =
@@ -121,6 +126,9 @@ export interface Scene {
   readonly wave: WaveState;
   selectedAntId: number | null;
   gameOver: boolean;
+  /** efeitos do ciclo A [O] */
+  readonly smashFx: ReadonlyArray<{ x: number; y: number; t: number }>;
+  readonly shake: number;
 }
 
 /** Contrato entre motor e comportamentos (testável com mock). */
@@ -135,6 +143,8 @@ export interface AntWorld {
   readonly events: EventBus;
   /** multiplicadores derivados das melhorias compradas */
   readonly mods: AntMods;
+  /** buffs momentâneos do rally [O] */
+  readonly buffs: { collectSpeedMult: number; attackCdMult: number };
 
   takeResource(kind: ResourceKind, n: number): boolean;
   deposit(units: number, kind: ResourceKind, by: AntClass): void;
@@ -191,8 +201,18 @@ export interface HudState {
 
   totals: { delivered: number; enemiesKilled: number; bossesKilled: number };
   upgrades: UpgradeLevels;
-  shopCosts: Record<string, { kind: ResourceKind; amount: number; maxed: boolean }>;
+  shopCosts: Record<string, { kind: ResourceKind; amount: number; maxed: boolean; multi?: Array<{ kind: ResourceKind; amount: number }> }>;
 
   hasSave: boolean;
   toasts: readonly Toast[];
+
+  /** rally ATACAR!/COLETA! [O] */
+  rally: { attackCd: number; collectCd: number; attackBuff: number; collectBuff: number };
+  /** barra do chefe só com aggro recente [O bossAggroT] */
+  bossAggro: boolean;
+  /** meta progresso */
+  missions: { done: number; total: number; progress: Array<{ id: string; title: string; desc: string; value: number; goal: number; rewardXp: number; done: boolean }> };
+  achievements: { done: number; total: number; progress: Array<{ id: string; title: string; desc: string; value: number; goal: number; done: boolean }> };
+  rebirths: number;
+  score: number;
 }

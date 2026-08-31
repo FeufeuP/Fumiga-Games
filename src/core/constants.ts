@@ -150,6 +150,7 @@ export const FOOD_ORDER = ['leaf', 'mushroom', 'cactus', 'banana', 'flower', 'cr
 
 export const NEST = {
   HP_MAX: 400,            // [O] qn
+  HP_PER_UPGRADE: 100,    // [O] Er
   REGEN_PER_SEC: 1.2,     // [O] FA — sem inimigo por perto
   REGEN_ENEMY_RADIUS: 320,// [O] enemyNearNest(320)
   REPAIR_PER_WORKER: 10,  // [O] QA — por operária, com ninho destruído
@@ -368,6 +369,7 @@ export interface UpgradeDef {
   cost: { kind: ResourceKind; amount: number };
   max: number;          // Infinity para dinâmicos
   step?: number;        // acréscimo de custo por compra (dinâmicos)
+  multiCost?: boolean;  // custo multi-recurso (nesthp) — ver nesthpCost()
 }
 
 export const UPGRADES: ReadonlyArray<UpgradeDef> = [
@@ -397,6 +399,17 @@ export function upgradeCost(def: UpgradeDef, bought: number): { kind: ResourceKi
   };
 }
 
+/** [O] ob(l): custo MULTI-recurso do nesthp — nível l usa tipos f0[0..l], 20+(l+1−i)×10 cada */
+export function nesthpCost(bought: number): Array<{ kind: ResourceKind; amount: number }> {
+  const l = bought + 1;
+  const n = Math.min(l, FOOD_ORDER.length);
+  const out: Array<{ kind: ResourceKind; amount: number }> = [];
+  for (let i = 0; i < n; i++) {
+    out.push({ kind: FOOD_ORDER[i] as ResourceKind, amount: 20 + (l - i) * 10 });
+  }
+  return out;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // ECONOMIA / SAVE / MOTOR
 // ═══════════════════════════════════════════════════════════════════
@@ -407,7 +420,7 @@ export const ECONOMY = {
 } as const;
 
 export const SAVE = {
-  VERSION: 2,
+  VERSION: 3,
   KEY: 'formigueiro_save_v2',
   DEBOUNCE_MS: 5000,
   PERIODIC_MS: 30000,
@@ -427,4 +440,65 @@ export const ENGINE = {
 export const APP = {
   NAME: 'FORMIGUEIRO',
   SUBTITLE: 'Jogo de colônia, exploração e sobrevivência',
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════
+// CICLO A — sistemas [O] extraídos do bundle
+// ═══════════════════════════════════════════════════════════════════
+
+/** [O] Rally — botões ATACAR!/COLETA! do HUD */
+export const RALLY = {
+  ATTACK_BUFF_SEC: 6,     // soldados: cooldown de ataque ×0.55
+  ATTACK_CD_SEC: 20,
+  ATTACK_SPEED_MULT: 0.55,
+  COLLECT_BUFF_SEC: 8,    // operárias: velocidade ×1.6
+  COLLECT_CD_SEC: 25,
+  COLLECT_SPEED_MULT: 1.6,
+} as const;
+
+/** [O] bossSmash — golpe em área do chefe (após o 1º dano recebido) */
+export const BOSS_SMASH = {
+  FIRST_INTERVAL_SEC: 15,   // bossThrowT inicial
+  INTERVAL_SEC: 15,
+  RADIUS: 90,               // formigas atingidas
+  KNOCKBACK_MIN: 300,
+  KNOCKBACK_RANGE: 80,
+  KNOCKUP_MIN: 260,
+  KNOCKUP_RANGE: 90,
+  RING_SEC: 0.5,            // efeito visual
+} as const;
+
+/** [O] bossAggroT — barra do chefe só aparece 4s após dano */
+export const BOSS = {
+  AGGRO_SEC: 4,
+} as const;
+
+/** [O] killAnt — morte derruba a carga e entra na fila do cemitério */
+export const ANT_RESPAWN = {
+  BASE_SEC: 15,           // YA
+  PER_LEVEL_MULT: 0.3,    // −30% por nível de "Renascer Rápido"
+  MIN_SEC: 3,
+} as const;
+
+/** [O] regeneração de recursos (a cada 0.8s, até 2 por tipo) */
+export const RESOURCE_REGEN = {
+  INTERVAL_SEC: 0.8,      // EA
+  MAX_PER_TICK: 2,
+  FACTOR_MIN: 0.15,       // exploredFactor = clamp(pct, 15%, 100%)
+} as const;
+
+/** [O] At(r) — bônus permanentes por renascimento */
+export const REBIRTH_BONUS = {
+  SPEED_PCT: 12,
+  VISION_PCT: 12,
+  CAPACITY: 1,
+  DAMAGE_PCT: 10,
+  HP_PCT: 15,
+  XP_PCT: 20,
+} as const;
+
+/** [O] placar: missões×100 + renascimentos×200 */
+export const SCORE = {
+  PER_MISSION: 100,
+  PER_REBIRTH: 200,
 } as const;

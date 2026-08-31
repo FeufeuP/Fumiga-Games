@@ -95,3 +95,58 @@
   gap: 12px;
   justify-content: center;
 }
+
+/* ── menu de pausa [O] ─────────────────────────────────────── */
+.pauseOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 18, 15, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 25;
+}
+
+.pausePanel {
+  background: var(--c-terra-media);
+  border: 3px solid var(--c-terra-clara);
+  border-radius: 14px;
+  box-shadow: 0 6px 0 var(--c-contorno);
+  padding: 22px 26px;
+  max-width: min(480px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pausePanel h2 {
+  text-align: center;
+  color: var(--c-dourado);
+  letter-spacing: 3px;
+}
+
+.pauseBtns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.achList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.achRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  background: rgba(20, 18, 15, 0.35);
+  border-radius: 6px;
+  padding: 6px 10px;
+}

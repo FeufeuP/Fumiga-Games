@@ -127,3 +127,43 @@ Formato: fase do plano (`01_PLANO_DE_DESENVOLVIMENTO.md`) → o que entrou.
   mapa, rainha, formigas, recursos e névoa (RLE) + checksum.
 - Mundo/física/entidades reescritos para o modelo do original; save v1 e
   sistemas antigos (economia de comida única, produção em fila) removidos.
+
+---
+
+## 0.3.0 — Ciclo A: lacunas de fidelidade fechadas (2026-08-31)
+
+> Pesquisa direta no bundle concluída; sistemas desconhecidos decodificados
+> e implementados com os valores exatos.
+
+### Sistemas novos [O]
+- **Smash do chefe**: após o 1º golpe recebido, ataque em área a cada 15s —
+  dano + arremesso das formigas (300–380 px/s + 260–350 para cima) com
+  física de voo (z/vx/vy/vz) e aterrissagem.
+- **Barra do chefe** só aparece 4s após dano (bossAggroT).
+- **Cemitério**: formiga morta derruba a carga no chão e entra na fila de
+  respawn (15s ×(1−0.3·upgrade), mín. 3s) — morte não é mais permanente.
+- **Rally ATACAR!/COLETA!**: botões do HUD com cooldown 20s/25s; soldados
+  atacam 45% mais rápido por 6s e avançam; operárias ×1.6 por 8s.
+- **Regeneração de recursos**: a cada 0.8s até 2 nós por tipo até
+  `round(maxRes × clamp(explorado%, 15%, 100%))`, sempre em área revelada.
+- **17ª melhoria** `nesthp` (+100 HP do ninho) com custo MULTI-recurso
+  `ob(l)` (nível 1: 30 folhas; nível 6: 6 tipos de uma vez).
+- **44 missões** e **27 conquistas** exatas do bundle, com recompensas
+  (XP, recursos, formigas) e progresso automático; totais cumulativos.
+- **Renascimento**: zera a run (missões incluídas), mantém conquistas e
+  totais, concede +12% vel, +12% visão, +1 carga, +10% dano, +15% HP e
+  +20% XP por renascimento. Placar: missões×100 + renascimentos×200.
+- **Nuvens** à deriva sobre o mapa; recursos com flutuação senoidal
+  (phase); tremor de câmera no smash e dano ao ninho.
+
+### Telas
+- HUD: botões de rally pulsando quando prontos, "EXPLORADO N%".
+- **Interior completo**: 9 salas nas posições do bundle — cemitério
+  (renascimentos com contagem), conquistas, missões, formigas, mapa,
+  melhorias, inventário, renascer (com bônus e placar) e sala da rainha.
+- **Menu de pausa** com CONTINUAR/ESTATÍSTICAS/CONQUISTAS/PLACAR/SAIR.
+- Game over com missões, conquistas, renascimentos e placar.
+
+### Salvar
+- **v3**: totais por recurso/inimigo, missões, conquistas, renascimentos,
+  contagens de formigas e fila do cemitério (v2 aceito com defaults).

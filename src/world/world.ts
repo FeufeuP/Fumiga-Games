@@ -48,7 +48,7 @@ export function generateWorld(mapId: MapId): WorldData {
       const x = Math.min(w - 30, Math.max(30, cx + Math.cos(ang) * dist));
       const y = Math.min(h - 30, Math.max(30, cy + Math.sin(ang) * dist));
       if (Math.hypot(x - nest.x, y - nest.y) < clear + 40) continue;
-      resources.push({ id: resId++, kind: m.resource, x, y, amount: 1 });
+      resources.push({ id: resId++, kind: m.resource, x, y, amount: 1, phase: rng.next() * Math.PI * 2 });
     }
   }
 

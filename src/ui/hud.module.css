@@ -197,3 +197,33 @@
   background: rgba(20, 18, 15, 0.55);
   pointer-events: none;
 }
+
+
+/* ── rally [O] ─────────────────────────────────────────────── */
+.rallyBtn {
+  background: var(--c-terra-escura);
+  border-color: var(--c-vermelho);
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
+.rallyReady {
+  background: var(--c-laranja);
+  border-color: #f08a4b;
+  animation: rallyPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes rallyPulse {
+  0%, 100% { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45), 0 0 0 0 rgba(251, 208, 70, 0.5); }
+  50% { box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45), 0 0 0 7px rgba(251, 208, 70, 0); }
+}
+
+.explored {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #fde056;
+  font-size: 11px;
+  letter-spacing: 1px;
+  border-top: 1px solid rgba(139, 86, 45, 0.6);
+  padding-top: 3px;
+}

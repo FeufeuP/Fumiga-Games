@@ -91,3 +91,53 @@ Extraídos por grep direto no minificado durante a implementação da fase F2;
 
 Correções sobre decisões [P] anteriores: velocidades 55/65/85 **substituídas**
 pelos valores [O] acima; chefe ×0.45 → **×0.42**; ninho 96px → **84px**.
+
+---
+
+## Apêndice C — Ciclo A: lacunas de fidelidade (plano executável)
+
+Pesquisa direta no bundle (31/08/2026). Escopo fechado em 9 frentes:
+
+### C1. Constantes novas (`core/constants.ts`)
+- `RALLY`: ATACAR! (buff 6s, cd 20s, cooldown de ataque ×0.55) e COLETA! (buff 8s, cd 25s, operária ×1.6)
+- `BOSS_SMASH`: só após o 1º golpe recebido; a cada 15s; dano = dano do chefe; raio 90px; knockback 300–380 px/s + vz 260–350 (voo)
+- `BOSS`: barra de HP só com aggro 4s após dano (`bossAggroT`)
+- `ANT_RESPAWN`: morte derruba a carga no chão; fila de respawn 15s×(1−0.3·upgrade), mínimo 3s
+- `RESOURCE_REGEN`: a cada 0.8s até 2 nós por tipo até `round(maxRes × clamp(explorado%, 15%, 100%))`; nasce só em área revelada
+- `REBIRTH_BONUS`: por renascimento → +12% vel, +12% visão, +1 carga, +10% dano, +15% HP, +20% XP
+- `UPGRADES`: +17ª melhoria `nesthp` (+100 HP ninho, custo MULTI-recurso `ob(l)`: nível l usa tipos f0[0..min(l+1,6)[ com 20+(l+1−i)×10)
+- `MISSIONS` m1–m44 e `ACHIEVEMENTS` a1–a30 EXATOS (títulos, metas, recompensas XP/recursos/formigas)
+- `SCORE`: missões×100 + renascimentos×200
+- `NEST.HP_PER_UPGRADE = 100` (Er)
+
+### C2. Tipos (`core/types.ts`)
+- `Ant` ganha `z, vx, vy, vz` (física de voo ao ser golpeado pelo smash)
+- `Totals` ganha `byResource`, `byEnemy`; estado de missões/conquistas/renascimentos/fila de respawn
+
+### C3. Sistema de missões/conquistas (`systems/missions.ts` NOVO)
+- `progressResource/progressEnemy/progressBoss` + `checkAchievements` (auto) + recompensas (XP + recursos + spawn de formigas)
+
+### C4. Simulação (`engine/update.ts`)
+- Timers: rally buffs, smash do chefe, respawn queue, resource regen, bossAggroT
+- `killAnt`: derruba carga → fila de respawn (não é morte permanente!)
+- Física do `z` (gravidade) nas formigas no ar
+
+### C5. Motor (`engine/GameEngine.ts`)
+- `ownedAnts` (contagem por classe é estado, não derivada), respawn devolve a formiga
+- `rallyAttack()/rallyCollect()`, `rebirth()`, `nestHpMax()`, score, shake de câmera
+- Progresso de missões/conquistas em deposit/dano; recompensas aplicadas
+- `modsFrom` incorpora bônus de renascimento
+
+### C6. Render (`render/Renderer.ts` + `sprites.ts`)
+- Nuvens (cloud.png) à deriva; recursos com bobbing (`phase`); formiga no ar (sombora separada); anel do smash; shake
+
+### C7. UI
+- HUD: botões ATACAR!/COLETA! com cooldown, barra do chefe só em aggro, "EXPLORADO N%"
+- Interior: 9 salas (cemitério com respawn, conquistas, missões, formigas, mapa, melhorias, inventário, renascer, rainha)
+- Menu de pausa: ESTATISTICAS/CONQUISTAS/PLACAR/SAIR; game over mostra placar
+
+### C8. Save v3
+- Missões, conquistas, renascimentos, fila de respawn, contagens; migrar v2 com defaults
+
+### C9. Qualidade
+- Testes: missão/conquista completam, respawn, regen, rebirth, rally, custo multi-recurso; tsc; build; CHANGELOG; push main

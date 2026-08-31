@@ -10,9 +10,10 @@ import styles from './cameraControls.module.css';
 interface Props {
   engine: GameEngine;
   hud: HudState;
+  onOpenPause: () => void;
 }
 
-export default function CameraControls({ engine, hud }: Props) {
+export default function CameraControls({ engine, hud, onOpenPause }: Props) {
   return (
     <div className={styles.col}>
       <button
@@ -27,8 +28,8 @@ export default function CameraControls({ engine, hud }: Props) {
       <button className={styles.btn} onClick={() => engine.cycleAnt()}>
         PRÓXIMA FORMIGA
       </button>
-      <button className={styles.btn} onClick={() => engine.togglePause()}>
-        {hud.paused ? 'CONTINUAR' : 'PAUSAR'}
+      <button className={styles.btn} onClick={onOpenPause}>
+        MENU
       </button>
     </div>
   );

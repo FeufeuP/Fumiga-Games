@@ -2,7 +2,7 @@
  * Loja — grade de 16 melhorias do original (Yr), em 4 categorias.
  * Compras dinâmicas (+5 formigas) escalam o custo; o resto tem nível máximo.
  */
-import { UPGRADES, upgradeCost, type ResourceKind, type UpgradeDef } from '../core/constants';
+import { REBIRTH_BONUS, UPGRADES, upgradeCost, type ResourceKind, type UpgradeDef } from '../core/constants';
 import type { AntMods, UpgradeLevels } from '../core/types';
 
 export function emptyUpgrades(): UpgradeLevels {
@@ -41,21 +41,34 @@ export function buy(
   return { levels: next, cost, antsToAdd };
 }
 
-/** Deriva os multiplicadores das formigas a partir dos níveis comprados. */
-export function modsFrom(levels: UpgradeLevels): AntMods {
-  const lv = (id: string) => levels[id] ?? 0;
+/** Bônus permanentes por renascimento [O At(r)]. */
+export function rebirthBonus(rebirths: number) {
   return {
-    speedMult: 1 + 0.1 * lv('speed'),
-    dmgMult: 1 + 0.1 * lv('strength'),
-    hpMult: 1 + 0.15 * lv('hpboost'),
+    speedPct: rebirths * REBIRTH_BONUS.SPEED_PCT,
+    visionPct: rebirths * REBIRTH_BONUS.VISION_PCT,
+    capacity: rebirths * REBIRTH_BONUS.CAPACITY,
+    damagePct: rebirths * REBIRTH_BONUS.DAMAGE_PCT,
+    hpPct: rebirths * REBIRTH_BONUS.HP_PCT,
+    xpPct: rebirths * REBIRTH_BONUS.XP_PCT,
+  };
+}
+
+/** Deriva os multiplicadores das formigas (melhorias + renascimento [O]). */
+export function modsFrom(levels: UpgradeLevels, rebirths = 0): AntMods {
+  const lv = (id: string) => levels[id] ?? 0;
+  const rb = rebirthBonus(rebirths);
+  return {
+    speedMult: (1 + 0.1 * lv('speed')) * (1 + rb.speedPct / 100),
+    dmgMult: (1 + 0.1 * lv('strength')) * (1 + rb.damagePct / 100),
+    hpMult: (1 + 0.15 * lv('hpboost')) * (1 + rb.hpPct / 100),
     attackSpeedMult: 1 + 0.15 * lv('attackspeed'),
     critChance: 0.1 * lv('crit'),
     critMult: 2 + 0.5 * lv('critdmg'),
     armorReduction: Math.min(0.8, 0.1 * lv('armor')),
     healPerSec: lv('heal') * 0.5,
-    carryCap: 1 + lv('capacity'),
-    visionMult: 1 + 0.15 * lv('vision'),
+    carryCap: 1 + lv('capacity') + rb.capacity,
+    visionMult: (1 + 0.15 * lv('vision')) * (1 + rb.visionPct / 100),
     luck: lv('luck'),
-    xpBoost: lv('xpboost'),
+    xpBoost: lv('xpboost') + rb.xpPct / 100,
   };
 }
