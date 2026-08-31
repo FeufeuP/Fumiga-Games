@@ -1,0 +1,97 @@
+.screen {
+  position: fixed;
+  inset: 0;
+  background: var(--c-fundo);
+}
+
+.canvas {
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.canvas:active {
+  cursor: grabbing;
+}
+
+.btn,
+.btnPrimary {
+  border: 3px solid var(--c-contorno);
+  border-radius: 10px;
+  background: var(--c-terra-clara);
+  color: var(--c-texto);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  padding: 8px 14px;
+  box-shadow: 0 3px 0 var(--c-contorno);
+}
+
+.btnPrimary {
+  background: var(--c-laranja);
+  color: #fff4dd;
+}
+
+.btn:active,
+.btnPrimary:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--c-contorno);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── derrota total ─────────────────────────────────────────────── */
+.gameOver {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 18, 15, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.gameOverPanel {
+  background: var(--c-terra-media);
+  border: 3px solid var(--c-contorno);
+  border-radius: 14px;
+  box-shadow: 0 6px 0 var(--c-contorno);
+  padding: 30px 34px;
+  max-width: min(460px, 88vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: center;
+}
+
+.gameOverPanel h2 {
+  color: var(--c-vermelho);
+  font-size: 26px;
+  letter-spacing: 0.12em;
+  text-shadow: 2px 2px 0 var(--c-contorno);
+}
+
+.gameOverSub {
+  font-size: 13px;
+  color: var(--c-texto);
+  line-height: 1.5;
+}
+
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  background: rgba(20, 18, 15, 0.35);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.gameOverBtns {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}

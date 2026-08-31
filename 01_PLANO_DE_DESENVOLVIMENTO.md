@@ -3,6 +3,14 @@
 > Documento operacional. Deriva de `Dossie_Perfeito_Melhorado.md` (Partes 1, 9, 10, 13).
 > Status: **Fases 0, 1 e 2 concluídas.**
 >
+> 🔄 **Nota da reconstrução (31/08/2026):** o código-fonte descrito abaixo
+> foi perdido — nunca chegou a este repositório (só docs e APK). A
+> reconstrução do zero começou hoje seguindo este plano e as decisões
+> D1–D6. Estado atual real: **Fases 1 e 2 reconstruídas** (ver
+> `CHANGELOG.md`); Fases 3–8 da implementação anterior **não existem**
+> neste código e serão reconstruídas na ordem do plano. O texto histórico
+> abaixo permanece como referência do que cada fase deve entregar.
+>
 > ⚠️ **Mudança de requisito (decidida pelo usuário):** o alvo deixou de ser um HTML
 > único. O projeto agora é **multi-arquivo**, com módulos separados por sistema.
 > A Parte 1.4 do dossiê ("carregar como HTML único") fica **suspensa**; os demais

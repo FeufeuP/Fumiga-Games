@@ -1,0 +1,141 @@
+.menu {
+  position: fixed;
+  inset: 0;
+  background: var(--c-fundo);
+  overflow: hidden;
+}
+
+/* gramado de fundo (placeholder até a arte oficial) */
+.grass {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 15%, rgba(255, 255, 255, 0.06), transparent 50%),
+    radial-gradient(ellipse at 80% 90%, rgba(0, 0, 0, 0.25), transparent 55%),
+    repeating-linear-gradient(
+      -3deg,
+      var(--c-grass-base) 0px,
+      var(--c-grass-base) 46px,
+      var(--c-grass-dark) 46px,
+      var(--c-grass-dark) 52px
+    );
+}
+
+.logo {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(28px, 7vw, 64px);
+  letter-spacing: 0.12em;
+  color: var(--c-dourado);
+  text-shadow:
+    3px 3px 0 var(--c-contorno),
+    6px 6px 0 rgba(0, 0, 0, 0.35);
+}
+
+.subtitle {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: clamp(10px, 2vw, 15px);
+  color: var(--c-texto);
+  text-shadow: 2px 2px 0 var(--c-contorno);
+  text-align: center;
+  width: 80%;
+  letter-spacing: 0.04em;
+}
+
+.queenBox {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.3));
+}
+
+.btn,
+.btnPrimary {
+  position: absolute;
+  transform: translateX(-50%);
+  border: 3px solid var(--c-contorno);
+  border-radius: 10px;
+  background: var(--c-terra-clara);
+  color: var(--c-texto);
+  font-size: clamp(14px, 2.4vw, 20px);
+  letter-spacing: 0.08em;
+  padding: 10px 18px;
+  box-shadow: 0 4px 0 var(--c-contorno);
+  transition: transform 0.05s, box-shadow 0.05s;
+  min-width: 180px;
+}
+
+.btnPrimary {
+  background: var(--c-laranja);
+  color: #fff4dd;
+}
+
+.btn:active,
+.btnPrimary:active {
+  transform: translateX(-50%) translateY(3px);
+  box-shadow: 0 1px 0 var(--c-contorno);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.version {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 12px;
+  color: rgba(245, 230, 200, 0.65);
+  text-shadow: 1px 1px 0 var(--c-contorno);
+}
+
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 18, 15, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.modal {
+  background: var(--c-terra-media);
+  border: 3px solid var(--c-contorno);
+  border-radius: 12px;
+  box-shadow: 0 6px 0 var(--c-contorno);
+  padding: 28px 32px;
+  max-width: min(420px, 86vw);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal h2 {
+  color: var(--c-dourado);
+  letter-spacing: 0.1em;
+  text-shadow: 2px 2px 0 var(--c-contorno);
+}
+
+.modalNote {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--c-texto);
+}
+
+.modal .btn {
+  position: static;
+  transform: none;
+  min-width: 140px;
+  align-self: center;
+}
+
+.modal .btn:active {
+  transform: translateY(3px);
+}

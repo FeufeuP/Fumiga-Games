@@ -1,0 +1,21 @@
+/* Paleta da Parte 2.2 — única fonte de cor da interface */
+:root {
+  --c-fundo: #1c1d24;
+  --c-terra-escura: #29170f;
+  --c-terra-media: #5d341e;
+  --c-terra-clara: #8b562d;
+  --c-contorno: #14120f;
+  --c-texto: #f5e6c8;
+  --c-dourado: #fbd046;
+  --c-laranja: #e96520;
+  --c-vermelho: #d94a3b;
+  --c-verde: #55b84b;
+  --c-azul: #63b5dc;
+  --c-roxo: #b67ad9;
+
+  --c-grass-base: #5a9b41;
+  --c-grass-dark: #4c8839;
+
+  --hud-scale: 1;
+  --font-pixel: 'Courier New', ui-monospace, Menlo, monospace;
+}

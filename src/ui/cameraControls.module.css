@@ -1,0 +1,25 @@
+.col {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.btn {
+  border: 3px solid var(--c-contorno);
+  border-radius: 8px;
+  background: rgba(41, 23, 15, 0.88);
+  color: var(--c-texto);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 7px 10px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.4);
+  min-width: 118px;
+}
+
+.btn:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}

@@ -1,0 +1,6 @@
+/* Pixel art sem blur (Parte 1.4) */
+canvas.pixel-art {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+}

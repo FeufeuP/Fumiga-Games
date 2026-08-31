@@ -1,5 +1,17 @@
 # 🐜 FORMIGUEIRO — Documentação
 
+## Como rodar o jogo
+
+```bash
+npm install
+npm run dev        # servidor de desenvolvimento
+npm test           # 46 testes (Vitest)
+npm run build      # typecheck + build de produção em dist/
+```
+
+O código-fonte vive em `src/` (reconstrução iniciada em 31/08/2026 —
+Fases 1 e 2 prontas; ver `CHANGELOG.md`).
+
 Ordem de leitura:
 
 | # | Arquivo | O que é |

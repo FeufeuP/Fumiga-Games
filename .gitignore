@@ -1,0 +1,16 @@
+# deps
+node_modules/
+
+# build
+dist/
+dev-dist/
+coverage/
+
+# capacitor/android (Fase 8 — regenerável)
+android/
+ios/
+
+# ambiente
+.DS_Store
+*.local
+*.log
