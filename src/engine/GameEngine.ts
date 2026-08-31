@@ -31,7 +31,7 @@ import { emptyUpgrades, modsFrom, upgradeById } from '../systems/shop';
 import { Camera } from '../render/Camera';
 import { Renderer } from '../render/Renderer';
 import { loadSprites, type SpriteSet } from '../render/sprites';
-import { AudioManager } from './audio';
+import { AudioManager, type SfxName } from './audio';
 import { loadSave, writeSave, saveExists, serialize, applySave } from '../save';
 
 function emptyResources(): Resources {
@@ -237,6 +237,7 @@ export class GameEngine implements AntWorld, Scene {
       this.xp += e.xp;
       this.totals.enemiesKilled++;
       this.totals.byEnemy[e.kind] = (this.totals.byEnemy[e.kind] ?? 0) + 1;
+      this.audio.play('kill');
       this.progressEnemy(e.kind);
       this.checkAchievements();
     }
@@ -244,6 +245,10 @@ export class GameEngine implements AntWorld, Scene {
 
   antCount(cls: AntClass): number {
     return this.ants.filter((a) => a.cls === cls && a.hp > 0).length;
+  }
+
+  playSfx(name: string): void {
+    this.audio.play(name as SfxName);
   }
 
   // ── EnemyHost (IA dos inimigos) ──────────────────────────────────
@@ -276,9 +281,17 @@ export class GameEngine implements AntWorld, Scene {
     };
   }
 
-  /** [O] placar: missões×100 + renascimentos×200 */
+  /** [O] placar (Sm): recursos×5 + inimigos×20 + chefes×100 + xp×2 + conquistas×50 + missões×100 + renasc×200 */
   get score(): number {
-    return this.missionsDone.length * SCORE.PER_MISSION + this.rebirths * SCORE.PER_REBIRTH;
+    return (
+      this.totals.delivered * SCORE.PER_RESOURCE +
+      this.totals.enemiesKilled * SCORE.PER_ENEMY +
+      this.totals.bossesKilled * SCORE.PER_BOSS +
+      this.xp * SCORE.PER_XP +
+      this.achievementsDone.length * SCORE.PER_ACHIEVEMENT +
+      this.missionsDone.length * SCORE.PER_MISSION +
+      this.rebirths * SCORE.PER_REBIRTH
+    );
   }
 
   /** [O] qn + upgrades.nesthp × Er */
@@ -312,10 +325,11 @@ export class GameEngine implements AntWorld, Scene {
       cls: a.cls,
       t: respawnSeconds(this.upgrades.respawn ?? 0),
     });
-    this.audio.play('dead');
+    this.audio.play('kill');
   }
 
   onAntRespawned(cls: AntClass): void {
+    this.audio.play('respawn');
     this.reviveEvents.push({ id: this.toastSeq, cls, t: 0 });
     if (this.reviveEvents.length > 12) this.reviveEvents.shift();
   }
@@ -373,7 +387,7 @@ export class GameEngine implements AntWorld, Scene {
   }
 
   onLevelUp(level: number): void {
-    this.audio.play('levelup');
+    this.audio.play('levelUp');
     this.pushToast(`⭐ A colônia alcançou o nível ${level}!`, 'success');
   }
 
@@ -381,7 +395,7 @@ export class GameEngine implements AntWorld, Scene {
     if (this.gameOver) return;
     this.gameOver = true;
     this.clock.paused = true;
-    this.audio.play('dead');
+    this.audio.play('kill');
     this.pushToast('A rainha morreu de fome...', 'danger');
     this.events.emit('run_end', { reason: 'queen_hunger_zero' });
     this.publishHud();
@@ -710,9 +724,59 @@ export class GameEngine implements AntWorld, Scene {
     this.publishHud();
   }
 
+  /** [O OPCOES] efeitos sonoros on/off (persiste formigueiro-sound-v1) */
   toggleMute(): void {
-    this.audio.muted = !this.audio.muted;
+    this.audio.setSound(!this.audio.soundOn);
     this.publishHud();
+  }
+
+  /** [O OPCOES] musica on/off (persiste formigueiro-music-v1) */
+  toggleMusic(): void {
+    this.audio.setMusic(!this.audio.musicOn);
+    this.publishHud();
+  }
+
+  /** [O OPCOES] resetar progresso: apaga save e volta ao zero */
+  resetProgress(): void {
+    try {
+      window.localStorage.removeItem(SAVE.KEY);
+    } catch { /* storage indisponível */ }
+    this.achievementsDone = [];
+    this.missionsDone = [];
+    this.rebirths = 0;
+    this.publishHud();
+  }
+
+  /** [O menu SAIR] he(): Android.exit → window.close → toast */
+  exitGame(): void {
+    const android = (window as unknown as { Android?: { exit?: () => void } }).Android;
+    if (android?.exit) {
+      android.exit();
+      return;
+    }
+    window.close();
+    // window.close() raramente fecha abas do usuário: confirma e avisa
+    window.setTimeout(() => {
+      this.pushToast('Use o botão do navegador para fechar.', 'info');
+    }, 150);
+  }
+
+  /** [O CREDITOS] tela cheia com toasts exatos do original */
+  async toggleFullscreen(): Promise<void> {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      await document.documentElement.requestFullscreen();
+    } catch {
+      this.pushToast(
+        document.fullscreenEnabled
+          ? 'Tela cheia bloqueada neste preview. Use F11.'
+          : 'Este navegador não suporta tela cheia. Use F11.',
+        'info',
+      );
+    }
   }
 
   panCamera(dxScreen: number, dyScreen: number): void {

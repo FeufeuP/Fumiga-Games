@@ -1,10 +1,15 @@
 /**
- * Menu principal — fundo original (menu_background.jpg), título
- * FORMIGUEIRO, NOVO JOGO / CONTINUAR e botão de som (sprites originais).
+ * Menu principal — fiel ao original [O]:
+ * fundo menu_background.jpg, título FORMIGUEIRO, subtítulo
+ * "EXPLORE ✦ COLETE ✦ COMBATE ✦ EVOLUA", badge V1.5,
+ * coluna JOGAR (glow) / OPCOES / CREDITOS, grid
+ * CONQUISTAS / ESTATISTICAS / PLACAR e botão SAIR (danger).
+ * Modais ficam em MenuModals.
  */
+import { useState } from 'react';
 import type { GameEngine } from '../engine/GameEngine';
 import type { HudState } from '../core/types';
-import { MAPS, type MapId } from '../core/constants';
+import MenuModals, { type MenuModalId } from './MenuModals';
 import styles from './mainMenu.module.css';
 
 interface Props {
@@ -13,45 +18,58 @@ interface Props {
 }
 
 export default function MainMenu({ engine, hud }: Props) {
+  const [modal, setModal] = useState<MenuModalId | null>(null);
   const bg = engine.sprites?.menuBg ?? '';
-  const soundIcon = engine.audio.muted
-    ? engine.sprites?.soundOff ?? ''
-    : engine.sprites?.soundOn ?? '';
+
+  const jogar = () => {
+    // [O] JOGAR continua o save; sem save, começa do zero
+    if (hud.hasSave) engine.continueGame();
+    else engine.newGame();
+  };
 
   return (
     <div className={styles.screen} style={{ backgroundImage: bg ? `url(${bg})` : undefined }}>
       <div className={styles.dim} />
-      <button
-        className={styles.soundBtn}
-        onClick={() => engine.toggleMute()}
-        aria-label="Som"
-        title={engine.audio.muted ? 'Ativar som' : 'Desativar som'}
-      >
-        {soundIcon && <img src={soundIcon} alt="" />}
-        {!soundIcon && (engine.audio.muted ? '🔇' : '🔊')}
-      </button>
+
+      <span className={styles.badge}>V1.5</span>
 
       <div className={styles.stack}>
         <h1 className={styles.title}>FORMIGUEIRO</h1>
-        <p className={styles.subtitle}>Cuide da rainha. Sobreviva às ondas.</p>
+        <p className={styles.subtitle}>
+          EXPLORE <span className={styles.spark}>✦</span> COLETE <span className={styles.spark}>✦</span>{' '}
+          COMBATE <span className={styles.spark}>✦</span> EVOLUA
+        </p>
 
-        <div className={styles.buttons}>
-          {hud.hasSave && hud.runActive === false && (
-            <button className={styles.btn} onClick={() => engine.continueGame()}>
-              CONTINUAR
-            </button>
-          )}
-          <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => engine.newGame()}>
-            NOVO JOGO
+        <div className={styles.column}>
+          <button className={`${styles.btn} ${styles.btnPlay}`} onClick={jogar}>
+            JOGAR
+          </button>
+          <button className={styles.btn} onClick={() => setModal('opcoes')}>
+            OPCOES
+          </button>
+          <button className={styles.btn} onClick={() => setModal('creditos')}>
+            CREDITOS
           </button>
         </div>
 
-        <p className={styles.hint}>
-          {hud.unlockedMaps.length > 1
-            ? `Mapas liberados: ${hud.unlockedMaps.map((m) => MAPS[m as MapId]?.name ?? m).join(' · ')}`
-            : 'Explore o campo para liberar o Pântano…'}
-        </p>
+        <div className={styles.grid}>
+          <button className={`${styles.btn} ${styles.btnSmall}`} onClick={() => setModal('conquistas')}>
+            🏆<br />CONQUISTAS
+          </button>
+          <button className={`${styles.btn} ${styles.btnSmall}`} onClick={() => setModal('estatisticas')}>
+            📊<br />ESTATISTICAS
+          </button>
+          <button className={`${styles.btn} ${styles.btnSmall}`} onClick={() => setModal('placar')}>
+            🥇<br />PLACAR
+          </button>
+        </div>
+
+        <button className={`${styles.btn} ${styles.btnExit}`} onClick={() => engine.exitGame()}>
+          SAIR
+        </button>
       </div>
+
+      {modal && <MenuModals id={modal} engine={engine} hud={hud} onClose={() => setModal(null)} />}
     </div>
   );
 }

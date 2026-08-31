@@ -158,8 +158,13 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
         )}
         {tab === 'score' && (
           <div className={styles.stats}>
-            <span>Missões ×{100}: {hud.missions.done} × 100 = {hud.missions.done * 100}</span>
-            <span>Renascimentos ×{200}: {hud.rebirths} × 200 = {hud.rebirths * 200}</span>
+            <span>Recursos ×5: {hud.totals.delivered} × 5 = {hud.totals.delivered * 5}</span>
+            <span>Inimigos ×20: {hud.totals.enemiesKilled} × 20 = {hud.totals.enemiesKilled * 20}</span>
+            <span>Chefes ×100: {hud.totals.bossesKilled} × 100 = {hud.totals.bossesKilled * 100}</span>
+            <span>XP ×2: {hud.xp} × 2 = {hud.xp * 2}</span>
+            <span>Conquistas ×50: {hud.achievements.done} × 50 = {hud.achievements.done * 50}</span>
+            <span>Missões ×100: {hud.missions.done} × 100 = {hud.missions.done * 100}</span>
+            <span>Renascimentos ×200: {hud.rebirths} × 200 = {hud.rebirths * 200}</span>
             <span><strong>PLACAR: {hud.score} pontos</strong></span>
           </div>
         )}

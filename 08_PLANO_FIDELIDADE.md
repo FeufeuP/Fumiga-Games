@@ -141,3 +141,59 @@ Pesquisa direta no bundle (31/08/2026). Escopo fechado em 9 frentes:
 
 ### C9. Qualidade
 - Testes: missão/conquista completam, respawn, regen, rebirth, rally, custo multi-recurso; tsc; build; CHANGELOG; push main
+
+---
+
+## Apêndice D — Ciclo B: polimento final (plano executável)
+
+Pesquisa no bundle concluída. Itens com dados EXATOS:
+
+### B1. Áudio idêntico (`engine/audio.ts` reescrito)
+- `Wt(freq, dur, type, vol, delay)`: oscilador com rampa exponencial 1e-4, stop+0.06
+- SFX [O]: click 600/.05/square/.06 · collect 760/.06/triangle/.09 · deposit 440/.09/sine/.10
+  · attack 180/.07/sawtooth/.08 · kill 200+120/.1/.14 sawtooth · win 523-659-784 sine
+  · levelUp 523-659-880 sine · error 140/.14/square/.07
+- **Música [O]**: sequenciador real — melodia r0 (32 notas, square, 0.035, 0.19×0.9s),
+  baixo mb (32 notas, triangle, 0.05, 0.19×1.8, nos tempos i%2===0), ruído kb
+  (0.03s, 0.012) nos i%2===1; scheduler setInterval 90ms com lookahead 0.25s
+- Persistência: `formigueiro-sound-v1` / `formigueiro-music-v1`
+
+### B2. Menu fiel (`ui/MainMenu.tsx`)
+- Subtítulo "EXPLORE, COLETE, COMBATE, EVOLUA" com ✦; badge **V1.5** topo-direita
+- Coluna: JOGAR (glow) / OPCOES / CREDITOS · grid: CONQUISTAS · ESTATISTICAS · PLACAR · SAIR
+- JOGAR = continua do save (sem NOVO JOGO — reset é via Renascer, como no original)
+
+### B3. Modais do menu (`ui/MenuModals.tsx` NOVO)
+- OPCOES [O]: "Configuracoes" + Efeitos sonoros (sprite) + Musica: LIGADA/DESLIGADA +
+  Resetar progresso (vermelho) + fechar (btn_back)
+- CREDITOS [O]: texto exato ("Feito para feira escolar", equipe, engine) + TELA CHEIA
+- PLACAR [O]: 7 linhas ×{5,20,100,2,50,100,200} + caixa "PONTUACAO TOTAL" vermelha
+- ESTATISTICAS/CONQUISTAS: linhas do bundle
+
+### B4. Placar real (Sm) — substitui a fórmula simplificada
+`recursos×5 + inimigos×20 + chefes×100 + XP×2 + conquistas×50 + missões×100 + renasc×200`
+
+### B5. HUD topo-esquerda [O]
+Card: NIVEL · RENASC · FORMIGAS · FOLHAS + barras NINHO e RAINHA
+(cores: >50% #5fce55 · >25% #e8c23c · senão #e2574c). XP sai do HUD (fica nas estatísticas).
+
+### B6. Interior: rainha com bobbing (sin) · B7. Reset de progresso + save limpo
+
+### Apêndice D.1 — Execução do ciclo B (2026-08-31) ✅
+- **B1 ✅** `audio.ts` reescrito; integração: `AntWorld.playSfx()` (engine → AudioManager,
+  mock no-op) usado por collect (colheita), attack (golpe), smash (pisão do chefe),
+  kill (inimigo/formiga), respawn, levelUp; música via `ensureMusic()` no primeiro
+  gesto (App `pointerdown/keydown`) e `setMusic` nas OPCOES.
+- **B2 ✅** MainMenu fiel: JOGAR(glow)/OPCOES/CREDITOS + grid CONQUISTAS/ESTATISTICAS/
+  PLACAR + SAIR danger + badge V1.5 + subtítulo ✦; JOGAR continua o save.
+- **B3 ✅** `MenuModals.tsx` NOVO: OPCOES (sprite 84px, Musica LIGADA/DESLIGADA,
+  Resetar progresso), CREDITOS exato + TELA CHEIA, PLACAR 7 linhas + PONTUACAO TOTAL
+  (#f0655c→#c0392b, borda #fde056) + rodapé, ESTATISTICAS, CONQUISTAS com barras.
+- **B4 ✅** SCORE em `core/constants.ts` com os 7 pesos [O]; `engine.score` e pausa
+  mostram a composição completa.
+- **B5 ✅** Hud: card topo-esquerda NIVEL/RENASC/FORMIGAS/FOLHAS + NINHO/RAINHA com
+  cores #5fce55/#e8c23c/#e2574c; XP removido do HUD.
+- **B6 ✅** Rainha do interior com bobbing (CSS 2s, ±6px).
+- **B7 ✅** `engine.resetProgress()` remove o save e zera conquistas/missoes/renasc;
+  `exitGame()` = Android.exit → window.close → toast; `toggleFullscreen()` com toasts [O].
+- Verificação: `tsc --noEmit` limpo · 62/62 testes · `vite build` ok.

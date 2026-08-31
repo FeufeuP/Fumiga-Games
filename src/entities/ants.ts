@@ -113,6 +113,7 @@ export function updateWorker(a: Ant, w: AntWorld, dt: number): void {
       if (dist <= BEHAVIOR.PICKUP_BASE + BEHAVIOR.RESOURCE_SIZE[res.kind] / 2) {
         a.state = 'harvest';
         a.timer = BEHAVIOR.HARVEST_SEC_PER_UNIT;
+        w.playSfx('collect');
       } else {
         seek(a, res.x, res.y, speed, dt);
       }
@@ -244,6 +245,7 @@ export function updateSoldier(a: Ant, w: AntWorld, dt: number): void {
       if (a.attackCd <= 0) {
         const { dmg, crit } = antDamage(a, w);
         w.damageEnemy(enemy, dmg, 'soldier');
+        w.playSfx('attack');
         if (crit) w.events.emit('toast', { text: 'Golpe crítico!', kind: 'info' });
         a.attackCd = (BEHAVIOR.ATTACK_COOLDOWN_SEC * w.buffs.attackCdMult) / w.mods.attackSpeedMult;
       }

@@ -337,6 +337,7 @@ function updateBossTimers(host: SimHost, dt: number): void {
 /** [O] bossSmash: dano + arremesso em área de 90px. */
 function bossSmash(host: SimHost, boss: Enemy): void {
   host.shake = Math.max(host.shake, 1);
+  host.playSfx('smash');
   host.smashFx.push({ x: boss.x, y: boss.y, t: BOSS_SMASH.RING_SEC });
   for (const a of host.ants) {
     if (Math.hypot(a.x - boss.x, a.y - boss.y) > BOSS_SMASH.RADIUS) continue;

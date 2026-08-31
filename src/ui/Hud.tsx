@@ -1,7 +1,8 @@
 /**
- * HUD — fiel ao original: nível + XP no topo-esquerda, onda no centro,
- * recursos no topo-direita, FOME da rainha e vida do ninho embaixo,
- * barra do chefe quando ele está vivo, avisos flutuantes (toasts).
+ * HUD — fiel ao original [O]: card no topo-esquerda com
+ * NIVEL(⭐)/RENASC(👑)/FORMIGAS(🐜)/FOLHAS(🍃) + barras NINHO e RAINHA
+ * (cores >50% #5fce55, >25% #e8c23c, senão #e2574c); XP NÃO aparece
+ * no HUD (só em ESTATISTICAS). Onda no centro, recursos no topo-direita.
  */
 import { RESOURCES, type ResourceKind } from '../core/constants';
 import type { HudState } from '../core/types';
@@ -18,18 +19,33 @@ interface Props {
 const RES_ORDER: ResourceKind[] = ['leaf', 'mushroom', 'cactus', 'banana', 'flower', 'crystal'];
 
 export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRallyCollect }: Props) {
-  const xpPct = Math.min(100, (hud.xp / Math.max(1, hud.xpToNext)) * 100);
   const hungerPct = (hud.queenHunger / hud.queenHungerMax) * 100;
   const nestPct = (hud.nestHp / hud.nestHpMax) * 100;
   const waveSec = Math.max(0, Math.ceil(hud.wave.tSec));
+  const antsTotal = hud.ants.worker + hud.ants.soldier + hud.ants.scout;
+  const barColor = (pct: number) => (pct > 50 ? '#5fce55' : pct > 25 ? '#e8c23c' : '#e2574c');
 
   return (
     <div className={styles.hud}>
-      {/* topo-esquerda: nível + XP */}
-      <div className={styles.level}>
-        <span className={styles.levelLabel}>NÍVEL {hud.level}</span>
-        <div className={styles.bar}>
-          <div className={styles.barFill} style={{ width: `${xpPct}%`, background: 'var(--c-dourado)' }} />
+      {/* topo-esquerda [O]: card NIVEL/RENASC/FORMIGAS/FOLHAS + NINHO/RAINHA */}
+      <div className={styles.statusCard}>
+        <div className={styles.statusRow}><span>⭐ NIVEL</span><strong>{hud.level}</strong></div>
+        <div className={styles.statusRow}><span>👑 RENASC</span><strong>{hud.rebirths}</strong></div>
+        <div className={styles.statusRow}><span>🐜 FORMIGAS</span><strong>{antsTotal}</strong></div>
+        <div className={styles.statusRow}><span>🍃 FOLHAS</span><strong>{hud.resources.leaf ?? 0}</strong></div>
+        <div className={styles.statusBars}>
+          <div className={styles.statusBarRow}>
+            <span>NINHO</span>
+            <div className={styles.bar}>
+              <div className={styles.barFill} style={{ width: `${nestPct}%`, background: barColor(nestPct) }} />
+            </div>
+          </div>
+          <div className={styles.statusBarRow}>
+            <span>RAINHA</span>
+            <div className={styles.bar}>
+              <div className={styles.barFill} style={{ width: `${hungerPct}%`, background: barColor(hungerPct) }} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -70,31 +86,6 @@ export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRall
             {t.text}
           </div>
         ))}
-      </div>
-
-      {/* rodapé-esquerda: rainha + ninho */}
-      <div className={styles.queen}>
-        <span className={styles.queenLabel}>
-          👑 FOME {Math.ceil(hud.queenHunger)}/{hud.queenHungerMax}
-        </span>
-        <div className={styles.bar}>
-          <div
-            className={styles.barFill}
-            style={{
-              width: `${hungerPct}%`,
-              background: hungerPct < 30 ? 'var(--c-vermelho)' : 'var(--c-verde)',
-            }}
-          />
-        </div>
-        <span className={styles.queenLabel}>
-          🏠 NINHO {Math.ceil(hud.nestHp)}/{hud.nestHpMax}
-        </span>
-        <div className={styles.bar}>
-          <div
-            className={styles.barFill}
-            style={{ width: `${nestPct}%`, background: 'var(--c-terra-clara)' }}
-          />
-        </div>
       </div>
 
       {/* rodapé-direita: rally [O] + loja + mapas */}

@@ -79,6 +79,7 @@ class MockHost implements SimHost {
   nearestVisibleEnemy(): Enemy | null { return null; }
   damageEnemy(e: Enemy, dmg: number): void { e.hp -= dmg; if (e.hp <= 0) this.xp += e.xp; }
   antCount(cls: AntClass): number { return this.ants.filter((a) => a.cls === cls).length; }
+  playSfx(): void { /* mock */ }
   damageAnt(): void { /* teste não usa */ }
   damageNest(dmg: number): void { this.nestHp = Math.max(0, this.nestHp - dmg); }
   spawnAnt(cls: AntClass): void {

@@ -498,7 +498,13 @@ export const REBIRTH_BONUS = {
 } as const;
 
 /** [O] placar: missões×100 + renascimentos×200 */
+/** [O] pesos do placar (função Sm do original) */
 export const SCORE = {
+  PER_RESOURCE: 5,
+  PER_ENEMY: 20,
+  PER_BOSS: 100,
+  PER_XP: 2,
+  PER_ACHIEVEMENT: 50,
   PER_MISSION: 100,
   PER_REBIRTH: 200,
 } as const;

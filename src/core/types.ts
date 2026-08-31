@@ -152,6 +152,8 @@ export interface AntWorld {
   nearestVisibleEnemy(x: number, y: number, maxDist: number): Enemy | null;
   damageEnemy(e: Enemy, dmg: number, by: AntClass): void;
   antCount(cls: AntClass): number;
+  /** efeitos sonoros (motor de áudio) */
+  playSfx(name: string): void;
 }
 
 /** Multiplicadores aplicados às formigas (loja). */
