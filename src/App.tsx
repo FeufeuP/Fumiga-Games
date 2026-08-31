@@ -3,7 +3,7 @@
  * sprites originais antes do menu); a UI só lê a store
  * (useSyncExternalStore) e chama métodos públicos do motor.
  */
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { GameEngine } from './engine/GameEngine';
 import MainMenu from './ui/MainMenu';
 import GameScreen from './ui/GameScreen';
@@ -11,18 +11,22 @@ import InteriorScreen from './ui/InteriorScreen';
 
 export default function App() {
   const [engine, setEngine] = useState<GameEngine | null>(null);
+  const engineRef = useRef<GameEngine | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void GameEngine.create().then((e) => {
-      if (!cancelled) setEngine(e);
+      if (cancelled) {
+        e.detach();
+        return;
+      }
+      engineRef.current = e;
+      setEngine(e);
     });
     return () => {
       cancelled = true;
-      setEngine((current) => {
-        current?.detach();
-        return current;
-      });
+      engineRef.current?.detach();
+      engineRef.current = null;
     };
   }, []);
 
