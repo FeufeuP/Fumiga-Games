@@ -1,33 +1,51 @@
 import { describe, expect, it } from 'vitest';
-import { MAPS, NEST } from '../core/constants';
+import { MAPS, NEST, type MapId } from '../core/constants';
 import { generateWorld, nestPositionFor } from './world';
 
-describe('geração de mundo', () => {
-  it('determinística: mesma seed → mesmo mundo', () => {
-    const a = generateWorld('campo', 123);
-    const b = generateWorld('campo', 123);
+const ALL_MAPS: MapId[] = ['campo', 'pantano', 'deserto', 'montanha', 'caverna', 'selva'];
+
+describe('geração de mundo (seeds fixas por mapa, como no original)', () => {
+  it('determinística: mesmo mapa → mesmo mundo', () => {
+    const a = generateWorld('campo');
+    const b = generateWorld('campo');
     expect(a.resources).toEqual(b.resources);
     expect(a.props).toEqual(b.props);
     expect(a.nestX).toBe(b.nestX);
   });
 
   it('Campo tem 100 folhas e mundo 3400×2400 (dados do original)', () => {
-    const w = generateWorld('campo', 1);
+    const w = generateWorld('campo');
     expect(MAPS.campo.world.w).toBe(3400);
     expect(MAPS.campo.world.h).toBe(2400);
     expect(w.resources).toHaveLength(100);
     expect(w.resources.every((r) => r.kind === 'leaf')).toBe(true);
   });
 
-  it('ninho no centro do mundo (D2: 0.50, 0.52)', () => {
+  it('cada mapa gera o recurso próprio na quantidade certa', () => {
+    for (const id of ALL_MAPS) {
+      const w = generateWorld(id);
+      const cfg = MAPS[id];
+      expect(w.resources).toHaveLength(cfg.resourceCount);
+      expect(w.resources.every((r) => r.kind === cfg.resource)).toBe(true);
+    }
+  });
+
+  it('fauna ambiente respeita as contagens do mapa', () => {
+    const w = generateWorld('campo');
+    expect(w.ambientEnemies.length).toBe(
+      MAPS.campo.enemies.reduce((s, e) => s + e.count, 0),
+    );
+  });
+
+  it('ninho no centro do mundo', () => {
     const pos = nestPositionFor('campo');
     expect(pos.x).toBeCloseTo(1700, 0);
     expect(pos.y).toBeCloseTo(1248, 0);
   });
 
   it('recurso nenhum nasce colado no monte do ninho', () => {
-    for (const mapId of ['campo', 'pantano', 'selva'] as const) {
-      const w = generateWorld(mapId, 99);
+    for (const mapId of ALL_MAPS) {
+      const w = generateWorld(mapId);
       const nest = nestPositionFor(mapId);
       for (const r of w.resources) {
         expect(Math.hypot(r.x - nest.x, r.y - nest.y)).toBeGreaterThan(NEST.MOUND_RADIUS);
@@ -35,17 +53,13 @@ describe('geração de mundo', () => {
     }
   });
 
-  it('props também respeitam a clareira do ninho', () => {
-    const w = generateWorld('campo', 5);
-    const nest = nestPositionFor('campo');
-    for (const p of w.props) {
-      expect(Math.hypot(p.x - nest.x, p.y - nest.y)).toBeGreaterThan(NEST.MOUND_RADIUS + 60);
+  it('fauna ambiente nasce longe do ninho (>600px)', () => {
+    for (const mapId of ALL_MAPS) {
+      const w = generateWorld(mapId);
+      const nest = nestPositionFor(mapId);
+      for (const e of w.ambientEnemies) {
+        expect(Math.hypot(e.x - nest.x, e.y - nest.y)).toBeGreaterThan(600);
+      }
     }
-  });
-
-  it('densidade de props na ordem de grandeza certa (~3,6k no Campo)', () => {
-    const w = generateWorld('campo', 1);
-    expect(w.props.length).toBeGreaterThan(2500);
-    expect(w.props.length).toBeLessThan(5000);
   });
 });

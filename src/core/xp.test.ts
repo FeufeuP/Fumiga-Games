@@ -1,26 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { xpToNextLevel } from './constants';
+import { levelFromXp, xpToNextLevel } from './constants';
 
-describe('curva de XP (D3b — 10n + 8n²)', () => {
-  it('nível 1 = 18 XP', () => {
-    expect(xpToNextLevel(1)).toBe(18);
+describe('curva de XP original (nível n = 50 + 25(n−1))', () => {
+  it('nível 1 precisa de 50 XP', () => {
+    expect(xpToNextLevel(1)).toBe(50);
   });
 
-  it('nível 5 = 250 XP', () => {
-    expect(xpToNextLevel(5)).toBe(250);
-  });
-
-  it('nível 9 = 738 XP (meta: nível 9 na onda 10)', () => {
-    expect(xpToNextLevel(9)).toBe(738);
-  });
-
-  it('nível 20 = 3.400 XP (6,5× mais lenta que a linear do original)', () => {
-    expect(xpToNextLevel(20)).toBe(3400);
+  it('nível 5 precisa de 150 XP', () => {
+    expect(xpToNextLevel(5)).toBe(150);
   });
 
   it('é estritamente crescente', () => {
     for (let n = 1; n < 40; n++) {
       expect(xpToNextLevel(n + 1)).toBeGreaterThan(xpToNextLevel(n));
     }
+  });
+
+  it('levelFromXp acumulado: 0 XP = nível 1', () => {
+    expect(levelFromXp(0)).toBe(1);
+    expect(levelFromXp(49)).toBe(1);
+    expect(levelFromXp(50)).toBe(2);
+    expect(levelFromXp(50 + 75)).toBe(3);
   });
 });

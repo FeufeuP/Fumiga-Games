@@ -1,29 +1,19 @@
 /**
- * Tipos globais compartilhados. Nenhum sistema define struct próprio fora daqui
- * sem necessidade real — contratos estáveis facilitam a troca de camadas.
+ * Tipos globais — modelo fiel ao original: 3 classes de formiga,
+ * economia por tipo de recurso, inimigos/ondas/chefes, loja de melhorias.
  */
-import type { MapId } from './constants';
+import type { AntClass, EnemyKind, MapId, ResourceKind, UpgradeDef } from './constants';
 import type { Rng } from './rng';
 import type { EventBus } from './events';
 import type { FogOfWar } from '../engine/fogOfWar';
 
-// ── Entidades ──────────────────────────────────────────────────────
+export type { AntClass, EnemyKind, MapId, ResourceKind, UpgradeDef };
 
-export interface Vec2 {
-  x: number;
-  y: number;
-}
-
-export type AntClass =
-  | 'worker' | 'collector' | 'scout' | 'soldier'
-  | 'defender' | 'toxic' | 'giant';
-
-export type ResourceKind = 'leaf' | 'mushroom' | 'cactus' | 'banana' | 'flower' | 'crystal';
+export interface Vec2 { x: number; y: number }
 
 export type AntState =
-  | 'idle'
-  | 'gotoResource' | 'harvest' | 'returnNest'
-  | 'explore' | 'patrol';
+  | 'idle' | 'gotoResource' | 'harvest' | 'returnNest'
+  | 'explore' | 'patrol' | 'seekEnemy' | 'attack' | 'returnHome';
 
 export interface Ant {
   id: number;
@@ -33,22 +23,44 @@ export interface Ant {
   dir: 1 | -1;
   hp: number;
   hpMax: number;
-  /** unidades de recurso carregando (coletora) */
   carrying: number;
   carryKind: ResourceKind | null;
   state: AntState;
-  /** cronômetro do estado atual (colheita, pausa...) */
-  timer: number;
+  timer: number;          // cronômetro do estado (colheita/ataque)
+  attackCd: number;       // recarga de ataque
   targetResId: number | null;
-  /** alvo de movimento em coordenadas de mundo */
+  targetEnemyId: number | null;
   tx: number;
   ty: number;
-  /** fase de caminhada acumulada (animação) */
   walkPhase: number;
-  /** fase aleatória fixa (wobble/offset orgânico) */
   seed: number;
-  /** operárias vivem dentro do ninho — não desenham nem colidem fora */
-  internal: boolean;
+}
+
+export type EnemyState = 'wander' | 'chase' | 'attack';
+
+export interface Enemy {
+  id: number;
+  kind: EnemyKind;
+  x: number;
+  y: number;
+  dir: 1 | -1;
+  hp: number;
+  hpMax: number;
+  dmg: number;
+  speed: number;
+  aggro: number;
+  r: number;              // raio de colisão/ataque
+  scale: number;          // tamanho de desenho
+  xp: number;
+  wave: boolean;          // veio de uma onda
+  boss: boolean;
+  state: EnemyState;
+  targetAntId: number | null;
+  tx: number;
+  ty: number;
+  attackCd: number;
+  walkPhase: number;
+  seed: number;
 }
 
 export interface ResourceNode {
@@ -56,52 +68,43 @@ export interface ResourceNode {
   kind: ResourceKind;
   x: number;
   y: number;
-  /** unidades restantes */
   amount: number;
 }
 
-export type PropKind = 'tree' | 'bush' | 'stone' | 'rock' | 'twig' | 'leafpile' | 'clover';
+export type PropKind =
+  | 'tree' | 'stoneBig' | 'stoneSmall' | 'grass' | 'flower'
+  | 'mote' | 'pool' | 'mushroomProp';
 
 export interface Prop {
   kind: PropKind;
   x: number;
   y: number;
-  /** multiplicador de tamanho [0.8, 1.3] */
-  s: number;
+  s: number;         // escala
+  solid: boolean;    // obstáculo (árvore/pedra)
+  r: number;         // raio de colisão quando sólido
 }
-
-export type ProductionStage = 'egg' | 'larva' | 'pupa';
-
-export interface ProductionItem {
-  cls: AntClass;
-  /** ms restantes do item */
-  remainingMs: number;
-  totalMs: number;
-}
-
-export type HungerBand = 'sated' | 'normal' | 'hungry' | 'critical' | 'starving';
-
-export interface QueenState {
-  hp: number;
-  hpMax: number;
-  hunger: number;
-  hungerMax: number;
-  /** última faixa avisada — evita spam de toast */
-  lastBand: HungerBand;
-  queue: ProductionItem[];
-}
-
-export interface NestState {
-  hp: number;
-  hpMax: number;
-  /** ponto de depósito/entrada em coordenadas de mundo */
-  x: number;
-  y: number;
-}
-
-// ── Câmera / cena ──────────────────────────────────────────────────
 
 export type CameraMode = 'follow' | 'free';
+
+export type ToastKind = 'info' | 'success' | 'warn' | 'danger';
+
+export interface Toast {
+  id: number;
+  text: string;
+  kind: ToastKind;
+  tSec: number;
+}
+
+export interface WaveState {
+  num: number;
+  active: boolean;
+  tSec: number;          // tempo restante da fase atual
+  spawned: number;
+  spawnT: number;
+}
+
+export type Resources = Record<ResourceKind, number>;
+export type UpgradeLevels = Record<string, number>;
 
 /** O que o renderizador enxerga — GameEngine implementa. */
 export interface Scene {
@@ -111,84 +114,84 @@ export interface Scene {
   readonly props: readonly Prop[];
   readonly resources: readonly ResourceNode[];
   readonly ants: readonly Ant[];
-  readonly nest: NestState;
+  readonly enemies: readonly Enemy[];
+  readonly nest: { x: number; y: number; hp: number; hpMax: number };
   readonly fog: FogOfWar;
   readonly timeSec: number;
+  readonly wave: WaveState;
   selectedAntId: number | null;
   gameOver: boolean;
 }
 
-// ── Mundo visto pelos comportamentos ───────────────────────────────
-
-/**
- * Contrato entre motor e comportamentos de formiga. Os comportamentos
- * não importam o GameEngine — testam contra um mock disto.
- */
+/** Contrato entre motor e comportamentos (testável com mock). */
 export interface AntWorld {
   readonly w: number;
   readonly h: number;
-  readonly nest: NestState;
-  readonly queen: QueenState;
+  readonly nest: { x: number; y: number };
+  enemies: readonly Enemy[];
   readonly resources: readonly ResourceNode[];
   readonly fog: FogOfWar;
   readonly rng: Rng;
   readonly events: EventBus;
+  /** multiplicadores derivados das melhorias compradas */
+  readonly mods: AntMods;
 
-  food(): number;
-  /** deposita unidades de recurso → comida (com teto do estoque) */
-  depositFood(units: number, kind: ResourceKind, by: AntClass): void;
-  takeFood(units: number): boolean;
-  /** operária alimenta a Rainha: 1 comida = QUEEN.FOOD_TO_HUNGER pontos */
-  feedQueen(foodUnits: number): void;
-  repairNest(hp: number): void;
-  /** recurso revelado mais próximo dentro de maxDist */
+  takeResource(kind: ResourceKind, n: number): boolean;
+  deposit(units: number, kind: ResourceKind, by: AntClass): void;
   nearestRevealedResource(x: number, y: number, maxDist: number): ResourceNode | null;
-  popTotal(): number;
-  queueLength(): number;
+  nearestVisibleEnemy(x: number, y: number, maxDist: number): Enemy | null;
+  damageEnemy(e: Enemy, dmg: number, by: AntClass): void;
+  antCount(cls: AntClass): number;
 }
 
-// ── Interface (React) ──────────────────────────────────────────────
-
-export interface Toast {
-  id: number;
-  text: string;
-  kind: 'info' | 'warn' | 'danger';
-  tSec: number;
+/** Multiplicadores aplicados às formigas (loja). */
+export interface AntMods {
+  speedMult: number;
+  dmgMult: number;
+  hpMult: number;
+  attackSpeedMult: number;
+  critChance: number;
+  critMult: number;
+  armorReduction: number;
+  healPerSec: number;
+  carryCap: number;
+  visionMult: number;
+  luck: number;
+  xpBoost: number;
 }
 
-export type ScreenName = 'menu' | 'game' | 'interior';
+export type ScreenName = 'loading' | 'menu' | 'game' | 'interior';
 
-/** Snapshot raso que o motor publica na store — a HUD inteira deriva disto. */
 export interface HudState {
   screen: ScreenName;
   runActive: boolean;
   gameOver: boolean;
   mapId: MapId;
+  unlockedMaps: MapId[];
+  exploredPct: number;
   runSeconds: number;
 
-  food: number;
-  foodCap: number;
-  chitin: number;
-  hunger: number;
-  hungerMax: number;
-  hungerBand: HungerBand;
-  queenHp: number;
-  queenHpMax: number;
+  resources: Resources;
+  level: number;
+  xp: number;
+  xpToNext: number;
+
+  queenHunger: number;
+  queenHungerMax: number;
   nestHp: number;
   nestHpMax: number;
 
-  popByClass: Record<AntClass, number>;
-  popTotal: number;
-  popCap: number;
-  queue: ReadonlyArray<{ cls: AntClass; stage: ProductionStage | 'none'; pct: number }>;
+  ants: Record<AntClass, number>;
+  wave: WaveState;
+  boss: { name: string; hp: number; hpMax: number } | null;
 
   cameraMode: CameraMode;
   selectedAntId: number | null;
   paused: boolean;
 
-  delivered: number;
-  producedTotal: number;
-  resourcesLeft: number;
+  totals: { delivered: number; enemiesKilled: number; bossesKilled: number };
+  upgrades: UpgradeLevels;
+  shopCosts: Record<string, { kind: ResourceKind; amount: number; maxed: boolean }>;
 
   hasSave: boolean;
   toasts: readonly Toast[];

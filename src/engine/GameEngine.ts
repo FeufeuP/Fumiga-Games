@@ -1,92 +1,84 @@
 /**
- * GameEngine — orquestra o loop, o estado da run e a ponte com a interface.
- * Regras que ele obedece (plano §4):
- *  · não conhece React — só store/eventos;
- *  · simulação com delta fixo via Clock; visual usa dt do frame;
- *  · RNG semeado; nenhum Math.random daqui pra dentro;
- *  · o motor escreve na store; a UI só lê e chama métodos públicos.
+ * GameEngine — orquestra o loop, a run e a ponte com a interface.
+ * Fiel ao original: economia por recurso, loja de 16 melhorias, ondas,
+ * chefes, fome da Rainha, desbloqueio de mapas por exploração.
  */
 import {
-  POPULATION, PRODUCTION, ECONOMY, ENGINE, FOG, MAPS, NEST,
-  type MapId,
+  ANTS, ECONOMY, ENGINE, FOG, MAPS, NEST, POPULATION, RESOURCES, SAVE, UPGRADES, WAVES, XP, upgradeCost,
+  type AntClass, type EnemyKind, type MapId, type ResourceKind,
 } from '../core/constants';
 import { Rng } from '../core/rng';
 import { EventBus } from '../core/events';
 import { Store } from '../core/store';
 import { Clock } from '../core/clock';
 import type {
-  Ant, AntWorld, CameraMode, HudState, HungerBand, NestState, Prop,
-  ResourceKind, ResourceNode, Scene, Toast, AntClass,
+  Ant, AntMods, AntWorld, CameraMode, Enemy, HudState, Prop, ResourceNode,
+  Resources, Scene, Toast, UpgradeLevels, WaveState,
 } from '../core/types';
 import { SpatialHash } from './spatialHash';
 import { FogOfWar } from './fogOfWar';
-import { stepSimulation } from './update';
+import { stepSimulation, makeWaveEnemy, makeBoss } from './update';
 import { generateWorld } from '../world/world';
-import { ANT_CLASSES as CLASS_INFO, createAnt, revealRadiusOf, resetAntIds } from '../entities/ants/registry';
-import { createQueen, feedQueen as queenFeed, hungerBand, queueAnt as queenQueue, stageOf } from '../entities/queen/queen';
-import { depositInto, foodValueOf } from '../systems/economy';
-import { repair as nestRepair } from '../systems/nest';
+import { createAnt, resetAntIds } from '../entities/ants';
+import { resetEnemyIds } from '../entities/enemies';
+import { createQueenState } from '../systems/queen';
+import { emptyUpgrades, modsFrom, upgradeById } from '../systems/shop';
 import { Camera } from '../render/Camera';
 import { Renderer } from '../render/Renderer';
-import { registerAllSprites } from '../render/sprites';
-import { hasSprite } from '../render/spriteRegistry';
-import { SaveSystem } from '../save/saveSystem';
-import { readSave } from '../save/storage';
-import { applySave } from '../save/deserializer';
+import { loadSprites, type SpriteSet } from '../render/sprites';
+import { AudioManager } from './audio';
+import { loadSave, writeSave, saveExists, serialize, applySave } from '../save';
 
-/** Seed fixa por mapa — mundos idênticos entre runs (docs/05). */
-export function mapSeedFor(mapId: MapId): number {
-  let h = 2166136261;
-  for (let i = 0; i < mapId.length; i++) {
-    h ^= mapId.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
+function emptyResources(): Resources {
+  return { leaf: 0, mushroom: 0, cactus: 0, banana: 0, flower: 0, crystal: 0 };
 }
 
 function emptyHud(): HudState {
   return {
-    screen: 'menu',
+    screen: 'loading',
     runActive: false,
     gameOver: false,
     mapId: 'campo',
+    unlockedMaps: ['campo'],
+    exploredPct: 0,
     runSeconds: 0,
-    food: ECONOMY.START_FOOD,
-    foodCap: NEST.STORAGE,
-    chitin: 0,
-    hunger: 100,
-    hungerMax: 100,
-    hungerBand: 'sated',
-    queenHp: 500,
-    queenHpMax: 500,
+    resources: emptyResources(),
+    level: 1,
+    xp: 0,
+    xpToNext: 50,
+    queenHunger: 100,
+    queenHungerMax: 100,
     nestHp: NEST.HP_MAX,
     nestHpMax: NEST.HP_MAX,
-    popByClass: { worker: 0, collector: 0, scout: 0, soldier: 0, defender: 0, toxic: 0, giant: 0 },
-    popTotal: 0,
-    popCap: POPULATION.MAX_INITIAL,
-    queue: [],
+    ants: { worker: 0, soldier: 0, scout: 0 },
+    wave: { num: 0, active: false, tSec: WAVES.CALM_SEC, spawned: 0, spawnT: 0 },
+    boss: null,
     cameraMode: 'follow',
     selectedAntId: null,
     paused: false,
-    delivered: 0,
-    producedTotal: 0,
-    resourcesLeft: 0,
+    totals: { delivered: 0, enemiesKilled: 0, bossesKilled: 0 },
+    upgrades: emptyUpgrades(),
+    shopCosts: {},
     hasSave: false,
     toasts: [],
   };
 }
 
 export class GameEngine implements AntWorld, Scene {
-  // ── Scene ─────────────────────────────────────────────────────────
+  // ── Scene (o que o renderizador enxerga) ─────────────────────────
   mapId: MapId = 'campo';
-  w: number = MAPS.campo.world.w;
-  h: number = MAPS.campo.world.h;
+  w = MAPS.campo.world.w;
+  h = MAPS.campo.world.h;
   props: Prop[] = [];
-  resources: ResourceNode[] = [];
+  resources: ResourceNode[] = [];      // nós de recurso no mapa
   ants: Ant[] = [];
-  nest: NestState = { hp: NEST.HP_MAX, hpMax: NEST.HP_MAX, x: 0, y: 0 };
+  enemies: Enemy[] = [];
+  nest: { x: number; y: number; hp: number; hpMax: number } = {
+    x: 0, y: 0, hp: NEST.HP_MAX, hpMax: NEST.HP_MAX,
+  };
   fog = new FogOfWar(MAPS.campo.world.w, MAPS.campo.world.h);
   timeSec = 0;
+  wave: WaveState = { num: 0, active: false, tSec: WAVES.CALM_SEC, spawned: 0, spawnT: 0 };
   selectedAntId: number | null = null;
   gameOver = false;
 
@@ -95,74 +87,72 @@ export class GameEngine implements AntWorld, Scene {
   readonly store = new Store<HudState>(emptyHud());
   readonly camera = new Camera();
   readonly clock = new Clock();
-  readonly save: SaveSystem;
+  readonly audio = new AudioManager();
+  sprites: SpriteSet | null = null;
   private renderer: Renderer | null = null;
   rng: Rng = new Rng(1);
   private resourceIndex = new SpatialHash<ResourceNode>(ENGINE.SPATIAL_CELL);
 
-  // ── estado da run ─────────────────────────────────────────────────
-  seed = 1;
+  // ── estado ────────────────────────────────────────────────────────
   runActive = false;
   tick = 0;
   toasts: Toast[] = [];
-  foodAmount: number = ECONOMY.START_FOOD;
-  chitinAmount: number = ECONOMY.START_CHITIN;
-  deliveredTotal = 0;
-  producedTotal = 0;
-  queen = createQueen();
+  wallet: Resources = emptyResources();  // carteira da colônia
+  xp = 0;
+  level = 1;
+  exploredPct = 0;
+  unlockedMaps: MapId[] = ['campo'];
+  totals = { delivered: 0, enemiesKilled: 0, bossesKilled: 0 };
+  upgrades: UpgradeLevels = emptyUpgrades();
+  mods: AntMods = modsFrom(emptyUpgrades());
+  queen = createQueenState();
+  nestHp: number = NEST.HP_MAX;
+  wavesByMap: Partial<Record<MapId, number>> = {};
 
   // ── loop ──────────────────────────────────────────────────────────
   private running = false;
   private raf = 0;
   private lastFrameMs = 0;
   private lastHudMs = 0;
+  private lastSaveMs = 0;
   private toastSeq = 1;
-  private lastRepairEmitTick = -999;
   readonly keys = new Set<string>();
 
-  constructor() {
-    if (!hasSprite('ant:worker')) registerAllSprites();
-    this.save = new SaveSystem(this);
-    this.save.bind();
-    this.publishHud();
+  private constructor() {}
+
+  /** Cria o motor carregando os sprites originais (tela de loading antes). */
+  static async create(): Promise<GameEngine> {
+    const engine = new GameEngine();
+    engine.sprites = await loadSprites();
+    engine.store.publish({ ...engine.store.getSnapshot(), screen: 'menu' });
+    engine.publishHud();
+    return engine;
   }
 
-  // ═════════════════════════ ANTWORLD (simulação) ═══════════════════
+  // ═════════════════════════ ANTWORLD ═══════════════════════════════
 
-  food(): number {
-    return this.foodAmount;
-  }
-
-  depositFood(units: number, kind: ResourceKind, by: AntClass): void {
-    const value = foodValueOf(kind, units);
-    const res = depositInto(this.foodAmount, value);
-    this.foodAmount = res.food;
-    this.deliveredTotal += units;
-    this.events.emit('food_deposited', { units, food: res.accepted, by });
-  }
-
-  takeFood(units: number): boolean {
-    if (this.foodAmount >= units) {
-      this.foodAmount -= units;
+  takeResource(kind: ResourceKind, n: number): boolean {
+    if ((this.wallet[kind] ?? 0) >= n) {
+      this.wallet[kind] -= n;
       return true;
     }
     return false;
   }
 
-  feedQueen(foodUnits: number): void {
-    queenFeed(this.queen, foodUnits);
-    this.events.emit('queen_fed', { food: foodUnits });
-  }
-
-  repairNest(hp: number): void {
-    const r = nestRepair(this.nest.hp, this.nest.hpMax, hp);
-    if (r.repaired > 0) {
-      this.nest.hp = r.hp;
-      if (this.tick - this.lastRepairEmitTick > 60) {
-        this.lastRepairEmitTick = this.tick;
-        this.events.emit('nest_repaired', { amount: r.repaired });
+  deposit(units: number, kind: ResourceKind, by: AntClass): void {
+    const xpPer = XP.PER_DEPOSIT + this.mods.xpBoost;
+    for (let i = 0; i < units; i++) {
+      this.wallet[kind] += 1;
+      this.xp += xpPer;
+      // [O] sorte: 10% × nível → recurso extra
+      if (this.rng.chance(ECONOMY.LUCK_BONUS_CHANCE * this.mods.luck)) {
+        this.wallet[kind] += 1;
+        this.xp += 1;
       }
     }
+    this.totals.delivered += units;
+    this.audio.play('deposit');
+    this.events.emit('food_deposited', { units, food: units * RESOURCES[kind].food, by });
   }
 
   nearestRevealedResource(x: number, y: number, maxDist: number): ResourceNode | null {
@@ -172,9 +162,7 @@ export class GameEngine implements AntWorld, Scene {
     for (const r of candidates) {
       if (r.amount <= 0) continue;
       if (!this.fog.isRevealed(r.x, r.y)) continue;
-      const dx = r.x - x;
-      const dy = r.y - y;
-      const d2 = dx * dx + dy * dy;
+      const d2 = (r.x - x) ** 2 + (r.y - y) ** 2;
       if (d2 < bestD2) {
         bestD2 = d2;
         best = r;
@@ -183,21 +171,73 @@ export class GameEngine implements AntWorld, Scene {
     return best;
   }
 
-  popTotal(): number {
-    return this.ants.length + this.queen.queue.length;
+  nearestVisibleEnemy(x: number, y: number, maxDist: number): Enemy | null {
+    let best: Enemy | null = null;
+    let bestD2 = maxDist * maxDist;
+    for (const e of this.enemies) {
+      if (e.hp <= 0) continue;
+      if (!this.fog.isActive(e.x, e.y)) continue;
+      const d2 = (e.x - x) ** 2 + (e.y - y) ** 2;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = e;
+      }
+    }
+    return best;
   }
 
-  queueLength(): number {
-    return this.queen.queue.length;
+  damageEnemy(e: Enemy, dmg: number, _by: AntClass): void {
+    e.hp -= dmg;
+    if (e.hp <= 0 && !e.boss) {
+      // chefe é contabilizado em onBossDefeated (drops + XP)
+      this.xp += e.xp;
+      this.totals.enemiesKilled++;
+    }
+  }
+
+  antCount(cls: AntClass): number {
+    return this.ants.filter((a) => a.cls === cls && a.hp > 0).length;
+  }
+
+  // ── EnemyHost (IA dos inimigos) ──────────────────────────────────
+
+  damageAnt(antId: number, dmg: number, _by: EnemyKind): void {
+    const a = this.ants.find((x) => x.id === antId);
+    if (!a || a.hp <= 0) return;
+    a.hp -= dmg * (1 - this.mods.armorReduction);
+  }
+
+  damageNest(dmg: number): void {
+    const before = this.nestHp;
+    this.nestHp = Math.max(0, this.nestHp - dmg);
+    if (before > 0 && this.nestHp <= 0) {
+      this.pushToast('O formigueiro entrou em colapso!', 'danger');
+    }
   }
 
   // ═════════════════════════ SIMHOST ════════════════════════════════
 
-  spawnAntAtNest(cls: AntClass): void {
-    const ant = this.createAntAroundNest(cls);
+  get boss(): Enemy | null {
+    return this.enemies.find((e) => e.boss && e.hp > 0) ?? null;
+  }
+
+  spawnAnt(cls: AntClass): void {
+    const ang = this.rng.next() * Math.PI * 2;
+    const dist = 24 + this.rng.next() * 36;
+    const x = Math.min(this.w - 12, Math.max(12, this.nest.x + Math.cos(ang) * dist));
+    const y = Math.min(this.h - 12, Math.max(12, this.nest.y + Math.sin(ang) * dist));
+    const ant = createAnt(cls, x, y, () => this.rng.next());
+    ant.hp = ant.hpMax = Math.round(ANTS[cls].hp * this.mods.hpMult);
     this.ants.push(ant);
-    this.producedTotal++;
-    this.events.emit('ant_produced', { cls, id: ant.id });
+  }
+
+  spawnWaveEnemy(power?: number): void {
+    this.enemies.push(makeWaveEnemy(this, power));
+  }
+
+  spawnBoss(): void {
+    this.enemies.push(makeBoss(this));
+    this.audio.play('boss');
   }
 
   pushToast(text: string, kind: Toast['kind']): void {
@@ -205,26 +245,38 @@ export class GameEngine implements AntWorld, Scene {
     if (this.toasts.length > 3) this.toasts.shift();
   }
 
-  onQueenBandChange(band: HungerBand): void {
-    if (band === 'hungry') {
-      this.pushToast('A rainha está com fome! Leve comida ao ninho.', 'warn');
-    } else if (band === 'critical') {
-      this.pushToast('A rainha está FAMINTA! Ela vai morrer!', 'danger');
-    } else if (band === 'starving') {
-      this.pushToast('A rainha está em inanição — sem comida ela cai!', 'danger');
-    } else if (band === 'sated') {
-      this.pushToast('A rainha está saciada — produção acelerada.', 'info');
-    }
+  onLevelUp(level: number): void {
+    this.audio.play('levelup');
+    this.pushToast(`⭐ A colônia alcançou o nível ${level}!`, 'success');
   }
 
   onQueenDead(): void {
     if (this.gameOver) return;
     this.gameOver = true;
     this.clock.paused = true;
-    this.pushToast('A Rainha caiu. A colônia se dispersa...', 'danger');
-    this.events.emit('queen_dead', undefined);
-    this.events.emit('run_end', { reason: 'queen_hp_zero' });
+    this.audio.play('dead');
+    this.pushToast('A rainha morreu de fome...', 'danger');
+    this.events.emit('run_end', { reason: 'queen_hunger_zero' });
     this.publishHud();
+  }
+
+  onBossDefeated(e: Enemy): void {
+    const cfg = MAPS[this.mapId].boss;
+    for (const [kind, n] of Object.entries(cfg.drops)) {
+      this.wallet[kind as ResourceKind] += n ?? 0;
+    }
+    this.xp += e.xp;
+    this.totals.bossesKilled++;
+    this.audio.play('win');
+    this.pushToast(`🏆 ${cfg.name} derrotado! +${e.xp} XP e recursos!`, 'success');
+  }
+
+  onMapUnlocked(mapId: MapId): void {
+    if (this.unlockedMaps.includes(mapId)) return;
+    this.unlockedMaps.push(mapId);
+    this.audio.play('win');
+    this.pushToast(`🗺️ NOVO MAPA LIBERADO: ${MAPS[mapId].name}!`, 'success');
+    writeSave(serialize(this));
   }
 
   rebuildResourceIndex(): void {
@@ -234,10 +286,19 @@ export class GameEngine implements AntWorld, Scene {
     }
   }
 
+  recomputeFogActive(): void {
+    const sources: Array<{ x: number; y: number; r: number }> = this.ants.map((a) => ({
+      x: a.x, y: a.y,
+      r: a.cls === 'scout' ? FOG.SCOUT_RADIUS : FOG.PASSIVE_RADIUS,
+    }));
+    sources.push({ x: this.nest.x, y: this.nest.y, r: FOG.NEST_RADIUS });
+    this.fog.recomputeActive(sources);
+  }
+
   // ═════════════════════════ CICLO DE VIDA ═════════════════════════
 
   attach(canvas: HTMLCanvasElement): void {
-    this.renderer = new Renderer(canvas, this.camera);
+    this.renderer = new Renderer(canvas, this.camera, this.sprites);
     if (!this.running) {
       this.running = true;
       this.lastFrameMs = performance.now();
@@ -268,58 +329,75 @@ export class GameEngine implements AntWorld, Scene {
       this.lastHudMs = nowMs;
       this.publishHud();
     }
+    if (this.runActive && !this.gameOver && nowMs - this.lastSaveMs >= SAVE.PERIODIC_MS) {
+      this.lastSaveMs = nowMs;
+      writeSave(serialize(this));
+    }
   };
 
   private followTarget(): { x: number; y: number } {
-    const sel = this.ants.find((a) => a.id === this.selectedAntId && !a.internal);
+    const sel = this.ants.find((a) => a.id === this.selectedAntId);
     if (sel) return { x: sel.x, y: sel.y };
     return { x: this.nest.x, y: this.nest.y };
   }
 
   // ═════════════════════════ PARTIDA ═══════════════════════════════
 
-  loadWorld(mapId: MapId, runSeed: number): void {
+  private loadWorld(mapId: MapId): void {
     this.mapId = mapId;
-    this.seed = runSeed;
-    this.rng = new Rng(runSeed);
-    const world = generateWorld(mapId, mapSeedFor(mapId));
+    const world = generateWorld(mapId);
     this.w = world.w;
     this.h = world.h;
     this.props = world.props;
     this.resources = world.resources;
-    this.nest = { hp: NEST.HP_MAX, hpMax: NEST.HP_MAX, x: world.nestX, y: world.nestY };
+    this.enemies = world.ambientEnemies;
+    this.nest = { x: world.nestX, y: world.nestY, hp: this.nestHp, hpMax: NEST.HP_MAX };
     this.fog = new FogOfWar(world.w, world.h);
     this.camera.setWorldSize(world.w, world.h);
     this.rebuildResourceIndex();
   }
 
+  private populate(): void {
+    this.ants = [];
+    for (const [cls, n] of Object.entries(POPULATION.START) as Array<[AntClass, number]>) {
+      for (let i = 0; i < n; i++) this.spawnAnt(cls);
+    }
+    // formigas extras já compradas na loja
+    for (let i = 0; i < (this.upgrades.antlimit ?? 0) * 5; i++) this.spawnAnt('worker');
+    for (let i = 0; i < (this.upgrades.soldier ?? 0) * 5; i++) this.spawnAnt('soldier');
+    for (let i = 0; i < (this.upgrades.scout ?? 0) * 5; i++) this.spawnAnt('scout');
+  }
+
   newGame(mapId: MapId = 'campo'): void {
     resetAntIds();
+    resetEnemyIds();
     this.runActive = true;
     this.gameOver = false;
     this.toasts = [];
     this.selectedAntId = null;
-    this.producedTotal = 0;
-    this.deliveredTotal = 0;
     this.tick = 0;
     this.timeSec = 0;
-    this.queen = createQueen();
-    this.foodAmount = ECONOMY.START_FOOD;
-    this.chitinAmount = ECONOMY.START_CHITIN;
-
-    this.loadWorld(mapId, (Date.now() & 0x7fffffff) || 1);
-
-    // população inicial (POPULATION.START)
-    this.ants = [];
-    for (const [cls, n] of Object.entries(POPULATION.START) as Array<[AntClass, number]>) {
-      for (let i = 0; i < n; i++) {
-        this.ants.push(this.createAntAroundNest(cls));
-      }
+    this.xp = 0;
+    this.level = 1;
+    this.wallet = emptyResources();
+    for (const [k, v] of Object.entries(ECONOMY.START_RESOURCES)) {
+      this.wallet[k as ResourceKind] = v ?? 0;
     }
+    this.upgrades = emptyUpgrades();
+    this.mods = modsFrom(this.upgrades);
+    this.totals = { delivered: 0, enemiesKilled: 0, bossesKilled: 0 };
+    this.unlockedMaps = ['campo'];
+    this.wavesByMap = {};
+    this.queen = createQueenState();
+    this.nestHp = NEST.HP_MAX;
+    this.wave = { num: 0, active: false, tSec: WAVES.CALM_SEC, spawned: 0, spawnT: 0 };
+    this.rng = new Rng((Date.now() & 0x7fffffff) || 1);
 
-    // névoa: área do ninho já revelada
+    this.loadWorld(mapId);
+    this.populate();
+
     this.fog.reveal(this.nest.x, this.nest.y, FOG.NEST_RADIUS);
-    this.fog.recomputeActive(this.fogSources());
+    this.recomputeFogActive();
 
     this.camera.mode = 'follow';
     this.camera.cx = this.nest.x;
@@ -328,25 +406,27 @@ export class GameEngine implements AntWorld, Scene {
 
     this.clock.reset(performance.now());
     this.clock.paused = false;
+    this.audio.play('click');
     this.store.publish({ ...this.store.getSnapshot(), screen: 'game' });
     this.publishHud();
-    this.events.emit('run_start', { seed: this.seed, mapId });
+    this.events.emit('run_start', { seed: 0, mapId });
+    writeSave(serialize(this));
   }
 
   continueGame(): boolean {
-    const save = readSave();
+    const save = loadSave();
     if (!save) return false;
     if (!applySave(this, save)) return false;
     this.runActive = true;
     this.clock.paused = this.gameOver;
-    this.fog.recomputeActive(this.fogSources());
+    this.recomputeFogActive();
     this.store.publish({ ...this.store.getSnapshot(), screen: 'game' });
     this.publishHud();
     return true;
   }
 
   backToMenu(): void {
-    if (this.runActive) this.save.save('menu');
+    if (this.runActive) writeSave(serialize(this));
     this.runActive = false;
     this.clock.paused = true;
     this.store.publish({ ...this.store.getSnapshot(), screen: 'menu' });
@@ -359,18 +439,48 @@ export class GameEngine implements AntWorld, Scene {
 
   // ═════════════════════════ AÇÕES DA UI ═══════════════════════════
 
-  /** Enfileira produção de formiga (Sala da Rainha na Fase 3; botões por ora). */
-  queueAnt(cls: AntClass): boolean {
-    if (!this.runActive || this.gameOver) return false;
-    const info = CLASS_INFO[cls];
-    if (!info.unlocked) return false;
-    if (this.queen.queue.length >= PRODUCTION.QUEUE_MAX) return false;
-    if (this.popTotal() >= POPULATION.MAX_INITIAL) return false;
-    if (this.foodAmount < info.costFood) return false;
-    if (!queenQueue(this.queen, cls)) return false;
-    this.foodAmount -= info.costFood;
-    this.events.emit('production_queued', { cls });
+  buyUpgrade(id: string): boolean {
+    const def = upgradeById(id);
+    if (!def || !this.runActive || this.gameOver) return false;
+    const bought = this.upgrades[id] ?? 0;
+    if (bought >= def.max) return false;
+    const cost = upgradeCost(def, bought);
+    if (!this.takeResource(cost.kind, cost.amount)) return false;
+
+    this.upgrades = { ...this.upgrades, [id]: bought + 1 };
+    this.mods = modsFrom(this.upgrades);
+
+    if (def.id === 'antlimit') for (let i = 0; i < 5; i++) this.spawnAnt('worker');
+    if (def.id === 'soldier') for (let i = 0; i < 5; i++) this.spawnAnt('soldier');
+    if (def.id === 'scout') for (let i = 0; i < 5; i++) this.spawnAnt('scout');
+
+    this.audio.play('click');
+    this.pushToast(`${def.name} — nível ${bought + 1}!`, 'success');
     this.publishHud();
+    writeSave(serialize(this));
+    return true;
+  }
+
+  selectMap(mapId: MapId): boolean {
+    if (!this.unlockedMaps.includes(mapId) || mapId === this.mapId) return false;
+    this.wavesByMap[this.mapId] = this.wave.num;
+    resetAntIds();
+    resetEnemyIds();
+    this.wave = {
+      num: this.wavesByMap[mapId] ?? 0,
+      active: false, tSec: WAVES.CALM_SEC, spawned: 0, spawnT: 0,
+    };
+    this.selectedAntId = null;
+    this.loadWorld(mapId);
+    this.populate();
+    this.fog.reveal(this.nest.x, this.nest.y, FOG.NEST_RADIUS);
+    this.recomputeFogActive();
+    this.camera.cx = this.nest.x;
+    this.camera.cy = this.nest.y;
+    this.camera.clamp();
+    this.pushToast(`${MAPS[mapId].name} — boa exploração!`, 'info');
+    this.publishHud();
+    writeSave(serialize(this));
     return true;
   }
 
@@ -389,46 +499,49 @@ export class GameEngine implements AntWorld, Scene {
   }
 
   cycleAnt(): void {
-    const externals = this.ants.filter((a) => !a.internal);
-    if (externals.length === 0) {
+    if (this.ants.length === 0) {
       this.selectedAntId = null;
       this.publishHud();
       return;
     }
-    const idx = externals.findIndex((a) => a.id === this.selectedAntId);
-    const next = externals[(idx + 1) % externals.length] as Ant;
+    const idx = this.ants.findIndex((a) => a.id === this.selectedAntId);
+    const next = this.ants[(idx + 1) % this.ants.length] as Ant;
     this.selectedAntId = next.id;
     this.camera.mode = 'follow';
     this.publishHud();
   }
 
-  /** Arrasto da tela (px de tela) → pan no modo livre. */
-  panCamera(dxScreen: number, dyScreen: number): void {
-    this.camera.mode = 'free';
-    this.camera.pan(dxScreen / this.camera.zoom, dyScreen / this.camera.zoom);
-    this.publishHud();
-  }
-
-  /** Clique no mundo — retorna 'interior' se acertou o monte do ninho. */
   clickWorld(worldX: number, worldY: number): 'interior' | null {
     const d = Math.hypot(worldX - this.nest.x, worldY - this.nest.y);
-    if (d <= NEST.MOUND_RADIUS + 20) return 'interior';
-    return null;
+    return d <= NEST.MOUND_RADIUS + 20 ? 'interior' : null;
   }
 
   enterInterior(): void {
     if (!this.runActive || this.gameOver) return;
     this.clock.paused = true;
     this.store.publish({ ...this.store.getSnapshot(), screen: 'interior' });
-    this.events.emit('interior_enter', undefined);
     this.publishHud();
   }
 
   exitInterior(): void {
     this.store.publish({ ...this.store.getSnapshot(), screen: 'game' });
     this.clock.paused = this.gameOver;
-    this.events.emit('interior_exit', undefined);
     this.publishHud();
+  }
+
+  togglePause(): void {
+    this.clock.paused = !this.clock.paused;
+    this.publishHud();
+  }
+
+  toggleMute(): void {
+    this.audio.muted = !this.audio.muted;
+    this.publishHud();
+  }
+
+  panCamera(dxScreen: number, dyScreen: number): void {
+    this.camera.mode = 'free';
+    this.camera.pan(dxScreen / this.camera.zoom, dyScreen / this.camera.zoom);
   }
 
   keyDown(key: string): void {
@@ -439,80 +552,48 @@ export class GameEngine implements AntWorld, Scene {
     this.keys.delete(key.toLowerCase());
   }
 
-  togglePause(): void {
-    this.clock.paused = !this.clock.paused;
-    this.publishHud();
-  }
-
-  // ═════════════════════════ HELPERS ═══════════════════════════════
-
-  private createAntAroundNest(cls: AntClass): Ant {
-    let x = this.nest.x;
-    let y = this.nest.y;
-    if (cls !== 'worker') {
-      const ang = this.rng.next() * Math.PI * 2;
-      const dist = this.rng.float(26, 60);
-      x = Math.min(this.w - 12, Math.max(12, this.nest.x + Math.cos(ang) * dist));
-      y = Math.min(this.h - 12, Math.max(12, this.nest.y + Math.sin(ang) * dist));
-    }
-    return createAnt(cls, x, y, () => this.rng.next());
-  }
-
-  private fogSources(): Array<{ x: number; y: number; r: number }> {
-    const sources = this.ants
-      .filter((a) => !a.internal)
-      .map((a) => ({ x: a.x, y: a.y, r: revealRadiusOf(a.cls) }));
-    sources.push({ x: this.nest.x, y: this.nest.y, r: FOG.NEST_RADIUS });
-    return sources;
-  }
-
   // ═════════════════════════ HUD ═══════════════════════════════════
 
   publishHud(): void {
-    const q = this.queen;
-    const band = hungerBand(q.hunger, q.hungerMax);
-    const popByClass: Record<AntClass, number> = {
-      worker: 0, collector: 0, scout: 0, soldier: 0, defender: 0, toxic: 0, giant: 0,
-    };
-    for (const a of this.ants) popByClass[a.cls]++;
+    const antsCount: Record<AntClass, number> = { worker: 0, soldier: 0, scout: 0 };
+    for (const a of this.ants) antsCount[a.cls]++;
+
+    const shopCosts: HudState['shopCosts'] = {};
+    for (const def of UPGRADES) {
+      const bought = this.upgrades[def.id] ?? 0;
+      const cost = upgradeCost(def, bought);
+      shopCosts[def.id] = { kind: cost.kind, amount: cost.amount, maxed: bought >= def.max };
+    }
+
+    const boss = this.boss;
 
     this.store.publish({
       screen: this.store.getSnapshot().screen,
       runActive: this.runActive,
       gameOver: this.gameOver,
       mapId: this.mapId,
+      unlockedMaps: [...this.unlockedMaps],
+      exploredPct: this.exploredPct,
       runSeconds: this.clock.runSeconds,
-      food: this.foodAmount,
-      foodCap: NEST.STORAGE,
-      chitin: this.chitinAmount,
-      hunger: q.hunger,
-      hungerMax: q.hungerMax,
-      hungerBand: band,
-      queenHp: q.hp,
-      queenHpMax: q.hpMax,
-      nestHp: this.nest.hp,
-      nestHpMax: this.nest.hpMax,
-      popByClass,
-      popTotal: this.popTotal(),
-      popCap: POPULATION.MAX_INITIAL,
-      queue: q.queue.map((item) => ({
-        cls: item.cls,
-        stage: stageOf(item),
-        pct: Math.max(0, Math.min(1, 1 - item.remainingMs / item.totalMs)),
-      })),
+      resources: { ...this.wallet },
+      level: this.level,
+      xp: this.xp,
+      xpToNext: 50 + 25 * (this.level - 1),
+      queenHunger: this.queen.hunger,
+      queenHungerMax: 100,
+      nestHp: this.nestHp,
+      nestHpMax: NEST.HP_MAX,
+      ants: antsCount,
+      wave: { ...this.wave },
+      boss: boss ? { name: MAPS[this.mapId].boss.name, hp: boss.hp, hpMax: boss.hpMax } : null,
       cameraMode: this.camera.mode,
       selectedAntId: this.selectedAntId,
       paused: this.clock.paused,
-      delivered: this.deliveredTotal,
-      producedTotal: this.producedTotal,
-      resourcesLeft: this.resources.reduce((n, r) => n + (r.amount > 0 ? 1 : 0), 0),
-      hasSave: SaveSystem.exists(),
+      totals: { ...this.totals },
+      upgrades: { ...this.upgrades },
+      shopCosts,
+      hasSave: saveExists(),
       toasts: [...this.toasts],
     });
-  }
-
-  /** Referência estável de classes para a UI (custos, nomes). */
-  get classInfo(): typeof CLASS_INFO {
-    return CLASS_INFO;
   }
 }

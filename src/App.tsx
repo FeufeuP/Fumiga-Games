@@ -1,28 +1,39 @@
 /**
- * App — roteador de telas. O motor é singleton; a UI só lê a store
+ * App — roteador de telas. O motor é singleton assíncrono (carrega os
+ * sprites originais antes do menu); a UI só lê a store
  * (useSyncExternalStore) e chama métodos públicos do motor.
  */
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { GameEngine } from './engine/GameEngine';
 import MainMenu from './ui/MainMenu';
 import GameScreen from './ui/GameScreen';
 import InteriorScreen from './ui/InteriorScreen';
 
 export default function App() {
-  const engineRef = useRef<GameEngine | null>(null);
-  if (engineRef.current === null) {
-    engineRef.current = new GameEngine();
-  }
-  const engine = engineRef.current;
-
-  const hud = useSyncExternalStore(engine.store.subscribe, engine.store.getSnapshot);
+  const [engine, setEngine] = useState<GameEngine | null>(null);
 
   useEffect(() => {
-    // save de segurança ao fechar
+    let cancelled = false;
+    void GameEngine.create().then((e) => {
+      if (!cancelled) setEngine(e);
+    });
     return () => {
-      engine.detach();
+      cancelled = true;
+      setEngine((current) => {
+        current?.detach();
+        return current;
+      });
     };
-  }, [engine]);
+  }, []);
+
+  if (!engine) return <LoadingScreen />;
+  return <Screens engine={engine} />;
+}
+
+function Screens({ engine }: { engine: GameEngine }) {
+  const hud = useSyncExternalStore(engine.store.subscribe, engine.store.getSnapshot);
+
+  useEffect(() => () => engine.detach(), [engine]);
 
   return (
     <>
@@ -35,5 +46,29 @@ export default function App() {
         </>
       )}
     </>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#14120f',
+        color: '#f5e6c8',
+        fontFamily: "'Courier New', monospace",
+        fontWeight: 700,
+        letterSpacing: 2,
+      }}
+    >
+      <div style={{ fontSize: 40 }}>🐜</div>
+      <div style={{ fontSize: 20 }}>CARREGANDO FORMIGUEIRO…</div>
+    </div>
   );
 }

@@ -1,209 +1,199 @@
+/* HUD — molduras terrosas, barras com contorno, tipografia pixel. */
 .hud {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  font-size: 14px;
+  z-index: 5;
 }
 
-.hidden {
-  display: none;
+.hud > * {
+  pointer-events: auto;
 }
 
-/* ── painéis do topo ──────────────────────────────────────────── */
-.panel {
+/* ── nível/XP ─────────────────────────────────────────────── */
+.level {
   position: absolute;
-  transform: translateY(-50%);
-  background: rgba(41, 23, 15, 0.88);
-  border: 3px solid var(--c-contorno);
-  border-radius: 10px;
-  padding: 8px 12px;
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.4);
+  top: 10px;
+  left: 10px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  min-width: 150px;
+  gap: 4px;
+  background: rgba(20, 18, 15, 0.72);
+  border: 2px solid var(--c-terra-clara);
+  border-radius: 8px;
+  padding: 6px 10px;
 }
 
-.panelTitle {
-  font-size: 11px;
-  letter-spacing: 0.1em;
+.levelLabel {
+  font-size: 12px;
   color: var(--c-dourado);
+  letter-spacing: 1px;
 }
 
-.panelSub {
-  font-size: 11px;
-  color: rgba(245, 230, 200, 0.8);
-}
-
-.barRow {
+/* ── onda/chefe ───────────────────────────────────────────── */
+.center {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 6px;
+  max-width: 60vw;
 }
 
-.barLabel {
-  font-size: 10px;
-  width: 34px;
+.wave {
+  background: rgba(20, 18, 15, 0.72);
+  border: 2px solid var(--c-terra-clara);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  white-space: nowrap;
 }
 
-.barValue {
-  font-size: 11px;
-  min-width: 30px;
-  text-align: right;
-}
-
-.bar {
-  flex: 1;
-  height: 10px;
+.bossWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: min(420px, 56vw);
   background: rgba(20, 18, 15, 0.8);
-  border: 2px solid var(--c-contorno);
-  border-radius: 4px;
+  border: 2px solid var(--c-vermelho);
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+
+.bossName {
+  font-size: 11px;
+  color: #ff9d8a;
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+.bossBar {
+  height: 10px;
+}
+
+/* ── barras ───────────────────────────────────────────────── */
+.bar {
+  height: 8px;
+  background: var(--c-contorno);
+  border: 1px solid var(--c-contorno);
+  border-radius: 3px;
   overflow: hidden;
 }
 
 .barFill {
   height: 100%;
-  transition: width 0.2s steps(6);
+  transition: width 0.25s linear;
 }
 
-.resRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* ── recursos ─────────────────────────────────────────────── */
+.resources {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 3px 10px;
+  background: rgba(20, 18, 15, 0.72);
+  border: 2px solid var(--c-terra-clara);
+  border-radius: 8px;
+  padding: 6px 10px;
   font-size: 13px;
 }
 
-.resDivider {
-  opacity: 0.4;
+.res {
+  white-space: nowrap;
 }
 
-.foodDot,
-.chitinDot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--c-contorno);
-  border-radius: 3px;
-}
-
-.foodDot {
-  background: var(--c-verde);
-}
-
-.chitinDot {
-  background: var(--c-roxo);
-}
-
-/* ── barras inferiores FOME/COMIDA ────────────────────────────── */
-.bottomBar {
+/* ── rainha/ninho ─────────────────────────────────────────── */
+.queen {
   position: absolute;
+  bottom: 12px;
+  left: 10px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  background: rgba(20, 18, 15, 0.72);
+  border: 2px solid var(--c-terra-clara);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-width: 180px;
 }
 
-.barLabelBig {
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  text-shadow: 2px 2px 0 var(--c-contorno);
+.queenLabel {
+  font-size: 11px;
+  letter-spacing: 1px;
 }
 
-.bigBar {
-  height: 16px;
-  background: rgba(20, 18, 15, 0.85);
-  border: 3px solid var(--c-contorno);
-  border-radius: 6px;
-  overflow: hidden;
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.4);
+/* ── ações ────────────────────────────────────────────────── */
+.actions {
+  position: absolute;
+  bottom: 12px;
+  right: 10px;
+  display: flex;
+  gap: 8px;
 }
 
-.bigBarFill {
-  height: 100%;
-  transition: width 0.25s steps(8);
+.actionBtn {
+  padding: 10px 16px;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: var(--c-texto);
+  background: var(--c-terra-media);
+  border: 3px solid var(--c-terra-clara);
+  border-bottom-color: var(--c-contorno);
+  border-right-color: var(--c-contorno);
+  border-radius: 10px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45);
 }
 
-.barGreen {
-  background: var(--c-verde);
+.actionBtn:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
 }
 
-.barYellow {
-  background: var(--c-dourado);
-}
-
-.barRed {
-  background: var(--c-vermelho);
-}
-
-@keyframes pulseRed {
-  0%,
-  100% {
-    color: var(--c-vermelho);
-  }
-  50% {
-    color: #fff;
-  }
-}
-
-.pulseRed {
-  animation: pulseRed 0.9s infinite;
-}
-
-/* ── toasts ───────────────────────────────────────────────────── */
+/* ── toasts ───────────────────────────────────────────────── */
 .toasts {
   position: absolute;
-  top: 13%;
+  top: 72px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: 6px;
   align-items: center;
-  max-width: min(480px, 90vw);
+  pointer-events: none;
 }
 
 .toast {
-  padding: 8px 16px;
-  border: 3px solid var(--c-contorno);
+  background: rgba(20, 18, 15, 0.88);
   border-radius: 8px;
+  padding: 7px 14px;
   font-size: 13px;
+  letter-spacing: 0.5px;
+  border: 2px solid var(--c-terra-clara);
+  max-width: 78vw;
   text-align: center;
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.4);
 }
 
-.toastInfo {
-  background: var(--c-terra-clara);
-}
+.info { border-color: var(--c-azul); }
+.success { border-color: var(--c-verde); }
+.warn { border-color: var(--c-dourado); }
+.danger { border-color: var(--c-vermelho); }
 
-.toastWarn {
-  background: var(--c-dourado);
-  color: var(--c-contorno);
-}
-
-.toastDanger {
-  background: var(--c-vermelho);
-  color: #fff;
-}
-
-.pauseHint {
+/* ── pausa ────────────────────────────────────────────────── */
+.paused {
   position: absolute;
-  top: 22%;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 13px;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  letter-spacing: 8px;
   color: var(--c-texto);
-  background: rgba(20, 18, 15, 0.75);
-  padding: 6px 14px;
-  border-radius: 8px;
-  border: 2px solid var(--c-contorno);
-}
-
-@media (max-width: 700px) {
-  .panel {
-    min-width: 120px;
-    padding: 6px 9px;
-  }
-
-  .resRow {
-    font-size: 11px;
-  }
+  background: rgba(20, 18, 15, 0.55);
+  pointer-events: none;
 }

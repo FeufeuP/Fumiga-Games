@@ -1,93 +1,106 @@
 /**
- * HUD do mapa externo — posições da Parte 3.2:
- * ninho topo-esquerda · recursos topo-centro · FOME/COMIDA embaixo.
+ * HUD — fiel ao original: nível + XP no topo-esquerda, onda no centro,
+ * recursos no topo-direita, FOME da rainha e vida do ninho embaixo,
+ * barra do chefe quando ele está vivo, avisos flutuantes (toasts).
  */
+import { RESOURCES, type ResourceKind } from '../core/constants';
 import type { HudState } from '../core/types';
-import { HUD, MAP_NAMES } from '../core/constants';
 import styles from './hud.module.css';
 
 interface Props {
   hud: HudState;
+  onOpenShop: () => void;
+  onOpenMaps: () => void;
 }
 
-function fmtTime(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
+const RES_ORDER: ResourceKind[] = ['leaf', 'mushroom', 'cactus', 'banana', 'flower', 'crystal'];
 
-export default function Hud({ hud }: Props) {
-  const hungerPct = Math.max(0, Math.min(1, hud.hunger / hud.hungerMax));
-  const foodPct = Math.max(0, Math.min(1, hud.food / hud.foodCap));
-  const nestPct = Math.max(0, Math.min(1, hud.nestHp / hud.nestHpMax));
-
-  const bandClass =
-    hud.hungerBand === 'sated' || hud.hungerBand === 'normal'
-      ? styles.barGreen
-      : hud.hungerBand === 'hungry'
-        ? styles.barYellow
-        : styles.barRed;
+export default function Hud({ hud, onOpenShop, onOpenMaps }: Props) {
+  const xpPct = Math.min(100, (hud.xp / Math.max(1, hud.xpToNext)) * 100);
+  const hungerPct = (hud.queenHunger / hud.queenHungerMax) * 100;
+  const nestPct = (hud.nestHp / hud.nestHpMax) * 100;
+  const waveSec = Math.max(0, Math.ceil(hud.wave.tSec));
 
   return (
     <div className={styles.hud}>
-      {/* painel do ninho — topo esquerda */}
-      <div className={styles.panel} style={{ left: `${HUD.nest.x * 100}%`, top: `${HUD.nest.y * 100}%`, width: `${HUD.nest.w * 100}%` }}>
-        <div className={styles.panelTitle}>NINHO</div>
-        <div className={styles.barRow}>
-          <span className={styles.barLabel}>VIDA</span>
-          <div className={styles.bar}>
-            <div className={`${styles.barFill} ${styles.barGreen}`} style={{ width: `${nestPct * 100}%` }} />
+      {/* topo-esquerda: nível + XP */}
+      <div className={styles.level}>
+        <span className={styles.levelLabel}>NÍVEL {hud.level}</span>
+        <div className={styles.bar}>
+          <div className={styles.barFill} style={{ width: `${xpPct}%`, background: 'var(--c-dourado)' }} />
+        </div>
+      </div>
+
+      {/* topo-centro: onda + chefe */}
+      <div className={styles.center}>
+        <div className={styles.wave}>
+          {hud.wave.active
+            ? `🌊 ONDA ${hud.wave.num} · ${waveSec}s`
+            : `Próxima onda em ${waveSec}s`}
+        </div>
+        {hud.boss && (
+          <div className={styles.bossWrap}>
+            <span className={styles.bossName}>{hud.boss.name}</span>
+            <div className={styles.bossBar}>
+              <div
+                className={styles.barFill}
+                style={{ width: `${(hud.boss.hp / hud.boss.hpMax) * 100}%`, background: 'var(--c-vermelho)' }}
+              />
+            </div>
           </div>
-          <span className={styles.barValue}>{Math.ceil(hud.nestHp)}</span>
-        </div>
-        <div className={styles.panelSub}>
-          {MAP_NAMES[hud.mapId]} · {fmtTime(hud.runSeconds)}
-        </div>
+        )}
       </div>
 
-      {/* recursos — topo centro */}
-      <div className={styles.panel} style={{ left: `${HUD.resources.x * 100}%`, top: `${HUD.resources.y * 100}%`, width: `${HUD.resources.w * 100}%` }}>
-        <div className={styles.panelTitle}>RECURSOS NO ESTOQUE</div>
-        <div className={styles.resRow}>
-          <span className={styles.foodDot} /> {Math.floor(hud.food)} / {hud.foodCap}
-          <span className={styles.resDivider}>·</span>
-          <span className={styles.chitinDot} /> {hud.chitin}
-          <span className={styles.resDivider}>·</span>
-          POP {hud.popTotal}/{hud.popCap}
-        </div>
-      </div>
-
-      {/* FOME — barra inferior (Parte 3.2: x 0.34, y 0.91) */}
-      <div className={styles.bottomBar} style={{ left: `${HUD.hunger.x * 100}%`, top: `${HUD.hunger.y * 100}%`, width: `${HUD.hunger.w * 100}%` }}>
-        <div className={`${styles.barLabelBig} ${hud.hungerBand === 'critical' || hud.hungerBand === 'starving' ? styles.pulseRed : ''}`}>
-          FOME
-        </div>
-        <div className={styles.bigBar}>
-          <div className={`${styles.bigBarFill} ${bandClass}`} style={{ width: `${hungerPct * 100}%` }} />
-        </div>
-      </div>
-
-      {/* COMIDA — barra inferior direita */}
-      <div className={styles.bottomBar} style={{ left: `${HUD.food.x * 100}%`, top: `${HUD.food.y * 100}%`, width: `${HUD.food.w * 100}%` }}>
-        <div className={styles.barLabelBig}>COMIDA</div>
-        <div className={styles.bigBar}>
-          <div className={`${styles.bigBarFill} ${styles.barGreen}`} style={{ width: `${foodPct * 100}%` }} />
-        </div>
+      {/* topo-direita: recursos */}
+      <div className={styles.resources}>
+        {RES_ORDER.map((k) => (
+          <span key={k} className={styles.res}>
+            {RESOURCES[k].icon} {hud.resources[k] ?? 0}
+          </span>
+        ))}
       </div>
 
       {/* toasts */}
       <div className={styles.toasts}>
         {hud.toasts.map((t) => (
-          <div key={t.id} className={`${styles.toast} ${t.kind === 'danger' ? styles.toastDanger : t.kind === 'warn' ? styles.toastWarn : styles.toastInfo}`}>
+          <div key={t.id} className={`${styles.toast} ${styles[t.kind]}`}>
             {t.text}
           </div>
         ))}
       </div>
 
-      {/* pausa */}
-      {hud.paused && !hud.gameOver && (
-        <div className={styles.pauseHint}>PAUSADO — toque em CONTINUAR para voltar</div>
-      )}
+      {/* rodapé-esquerda: rainha + ninho */}
+      <div className={styles.queen}>
+        <span className={styles.queenLabel}>
+          👑 FOME {Math.ceil(hud.queenHunger)}/{hud.queenHungerMax}
+        </span>
+        <div className={styles.bar}>
+          <div
+            className={styles.barFill}
+            style={{
+              width: `${hungerPct}%`,
+              background: hungerPct < 30 ? 'var(--c-vermelho)' : 'var(--c-verde)',
+            }}
+          />
+        </div>
+        <span className={styles.queenLabel}>
+          🏠 NINHO {Math.ceil(hud.nestHp)}/{hud.nestHpMax}
+        </span>
+        <div className={styles.bar}>
+          <div
+            className={styles.barFill}
+            style={{ width: `${nestPct}%`, background: 'var(--c-terra-clara)' }}
+          />
+        </div>
+      </div>
+
+      {/* rodapé-direita: loja + mapas */}
+      <div className={styles.actions}>
+        <button className={styles.actionBtn} onClick={onOpenShop}>LOJA</button>
+        <button className={styles.actionBtn} onClick={onOpenMaps}>MAPAS</button>
+      </div>
+
+      {hud.paused && !hud.gameOver && <div className={styles.paused}>PAUSADO</div>}
     </div>
   );
 }

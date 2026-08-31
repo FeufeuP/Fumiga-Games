@@ -1,33 +1,25 @@
 /**
  * FORMIGUEIRO — src/core/constants.ts
  * ------------------------------------------------------------------
- * TODO número de balanceamento do jogo vive aqui. Nenhum literal mágico
- * espalhado pelos sistemas. Ajustar o jogo = editar este arquivo.
- *
- * Fonte: Dossie_Perfeito_Melhorado.md + docs/02_BALANCEAMENTO.md
- * Marcação:  [D] = definido no dossiê   [P] = proposto (simulado)
- * Ajustes das decisões do usuário (28/08/2026, docs/06):
- *   D2 = (a) mundo grande com câmera · D4 = (b) façanha + quitina
- *   D6 = (b ajustado) calmaria fixa de 30s
+ * Valores EXTRAÍDOS DO JOGO ORIGINAL (Formigueiro.original.html).
+ * Fidelidade ao original em primeiro lugar (decisão do usuário, 31/08/2026).
+ * Marcação: [O] = valor real do bundle original · [P] = proposto quando o
+ * original não expõe o número (velocidades das formigas, por ex.).
  */
 
 // ═══════════════════════════════════════════════════════════════════
-// MUNDO E RENDERIZAÇÃO — D2: viewport fixa + mundo grande por mapa
+// MUNDO E RENDERIZAÇÃO
 // ═══════════════════════════════════════════════════════════════════
 
 export const WORLD = {
-  VIEWPORT_WIDTH: 960,       // [D] Parte 3 — base lógica da pixel art e da HUD
-  VIEWPORT_HEIGHT: 720,      // [D]
-  TILE: 32,                  // [P] unidade base
-  NEST_SPAWN: { x: 0.50, y: 0.52 }, // [P] centro do mundo (D2 — era 0,72 no 960×720)
-  SIM_HZ: 60,                // [P] delta fixo da simulação
+  VIEWPORT_WIDTH: 960,        // [O] base lógica da HUD
+  VIEWPORT_HEIGHT: 720,
+  SIM_HZ: 60,                 // [P] delta fixo
+  NEST_SPAWN: { x: 0.5, y: 0.52 }, // [O] ninho no centro do mundo
 } as const;
 
-export const PALETTE = {                 // [D] Parte 2.2
-  FUNDO:        '#1c1d24',
-  TERRA_ESCURA: '#29170f',
-  TERRA_MEDIA:  '#5d341e',
-  TERRA_CLARA:  '#8b562d',
+export const PALETTE = {
+  FUNDO:        '#14120f',
   CONTORNO:     '#14120f',
   TEXTO:        '#f5e6c8',
   DOURADO:      '#fbd046',
@@ -38,444 +30,395 @@ export const PALETTE = {                 // [D] Parte 2.2
   ROXO:         '#b67ad9',
 } as const;
 
-/** [P] O mapa externo é um GRAMADO (decisão do usuário) — ver 01_PLANO §intro */
-export const GRASS = {
-  BASE:        '#5a9b41',
-  ALT:         '#549140',
-  PATCH_DARK:  '#4c8839',
-  PATCH_LIGHT: '#619f48',
-  TUFT:        '#6fb354',
-  CLOVER:      '#3e8f3e',
+/** [O] recoloração das folhas de sprites (técnica do original) */
+export const ANT_RECOLOR = {
+  soldier: { a: '#d9413a', b: '#8c1f1f' },  // vermelho
+  scout:   { a: '#3fae5a', b: '#1f6b38' },  // verde
 } as const;
 
-export const PROP_COLORS = {              // [P] placeholders geométricos (Parte 12.4)
-  TREE_CANOPY:  '#3f7a33',
-  TREE_CANOPY2: '#4f8f3c',
-  TREE_TRUNK:   '#5d341e',
-  BUSH:         '#468536',
-  STONE:        '#9aa0a8',
-  STONE_DARK:   '#767c86',
-  TWIG:         '#7a5a33',
-  LEAFPILE:     '#8fae4a',
-  ROCK:         '#767c86',
+/** [O] sprite da formiga: 96×96 desenhado a ⅓, âncora (43, 45.5)/3 */
+export const ANT_SPRITE = {
+  SRC: 96,
+  DRAW_BASE: 32,      // âncora referente ao desenho de 32px
+  ANCHOR_X: 43 / 3,   // [O] antAnchor (43, 45.5) já em base 32
+  ANCHOR_Y: 45.5 / 3,
+  FRAMES: 7,
+  CARRY_SLOWDOWN: 0.9, // [O] carregando = 10% mais lenta
 } as const;
 
-export const CAMERA = {                   // [P] D2
-  FOLLOW_LERP: 6,          // /s — suavização ao seguir
-  DEADZONE: 24,            // px — zona morta antes de mover
-  DRAG_THRESHOLD: 8,       // px — arrasto menor que isso ainda é clique
-  FREE_KEY_SPEED: 420,     // px/s — WASD/setas no modo livre
-  NEST_CLICK_RADIUS: 90,   // px — clique no monte entra no interior
+/** [O] tamanhos de desenho extraídos do bundle */
+export const SPRITE_DRAW = {
+  NEST: 84,             // drawImage(nest,-L,-D,84,P)
+  BOSS_W: 0.42,         // isBoss ? scale*.42 : r
+  BOSS_PULSE: 0.52,     // halo: scale*(.52+.04·sin(t·3))
+  BOSS_PULSE_AMPL: 0.04,
+  TREE: 96,             // [P] árvore 56px → 96 no mundo
+  STONE_BIG: 64,
+  STONE_SMALL: 44,
+  LEAF: 28,
+  MUSHROOM: 48,
+} as const;
+
+export const CAMERA = {
+  FOLLOW_LERP: 6,          // [P]
+  DEADZONE: 24,            // [P]
+  DRAG_THRESHOLD: 8,       // [P] clique curto ainda é clique
+  FREE_KEY_SPEED: 420,     // [P]
+  NEST_CLICK_RADIUS: 90,   // [P]
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════
-// MAPAS — ordem corrigida do original (docs/05) · desbloqueio D4 (b)
+// FORMIGAS — [O] hp/dano/tamanho do bundle (pb/vb/K0)
 // ═══════════════════════════════════════════════════════════════════
 
-export const MAPS = {
-  campo:    { order: 1, world: { w: 3400, h: 2400 }, resource: 'leaf',     resourceCount: 100,
-              enemyMult: 1.0, resourceMult: 1.0, chitinCost: 0,   unlock: 'inicial' },
-  pantano:  { order: 2, world: { w: 3400, h: 2400 }, resource: 'mushroom', resourceCount: 90,
-              enemyMult: 1.2, resourceMult: 1.1, chitinCost: 15,  unlock: 'chefe_campo' },
-  deserto:  { order: 3, world: { w: 3600, h: 2600 }, resource: 'cactus',   resourceCount: 80,
-              enemyMult: 1.6, resourceMult: 1.2, chitinCost: 30,  unlock: 'onda20_pantano' },
-  montanha: { order: 4, world: { w: 3600, h: 2600 }, resource: 'flower',   resourceCount: 80,
-              enemyMult: 1.8, resourceMult: 1.4, chitinCost: 50,  unlock: 'chefe_deserto' },
-  caverna:  { order: 5, world: { w: 3800, h: 2800 }, resource: 'crystal',  resourceCount: 90,
-              enemyMult: 1.4, resourceMult: 1.3, chitinCost: 80,  unlock: 'dois_chefes_mesma_run' },
-  selva:    { order: 6, world: { w: 4000, h: 3000 }, resource: 'banana',   resourceCount: 80,
-              enemyMult: 2.0, resourceMult: 1.6, chitinCost: 120, unlock: 'quatro_chefes' },
+export type AntClass = 'worker' | 'soldier' | 'scout';
+
+export const ANTS: Record<AntClass, {
+  name: string; icon: string; desc: string;
+  hp: number; dmg: number; size: number; speed: number;
+}> = {
+  // velocidade [O]: base 82 · scout ×1.35 (110.7) · carregando ×0.9
+  worker: {
+    name: 'Operária', icon: '🐜',
+    desc: 'Coleta recursos na área descoberta.',
+    hp: 30, dmg: 5, size: 22, speed: 82,
+  },
+  soldier: {
+    name: 'Soldado', icon: '⚔️',
+    desc: 'Ataca inimigos próximos na área descoberta.',
+    hp: 60, dmg: 10, size: 44, speed: 82,
+  },
+  scout: {
+    name: 'Exploradora', icon: '💨',
+    desc: 'Revela a sombra do mapa por onde passa.',
+    hp: 28, dmg: 6, size: 20, speed: 82 * 1.35,
+  },
 } as const;
 
-export type MapId = keyof typeof MAPS;
+export const POPULATION = {
+  START: { worker: 3, soldier: 1, scout: 1 },   // [P] colônia inicial
+  MAX: 60,                                       // [P] teto de segurança
+} as const;
 
-export const MAP_NAMES: Record<MapId, string> = {
-  campo: 'Campo', pantano: 'Pântano', deserto: 'Deserto',
-  montanha: 'Montanha', caverna: 'Caverna', selva: 'Selva',
-};
+export const BEHAVIOR = {
+  HARVEST_SEC_PER_UNIT: 0.8,   // [P]
+  ARRIVE_RADIUS: 10,
+  SEPARATION_RADIUS: 14,
+  ATTACK_RANGE_PAD: 6,
+  ATTACK_COOLDOWN_SEC: 1,
+  SCOUT_REVEAL_CELL: 2,        // [O] exploradora revela 2 células de névoa
+  WORKER_DETECT: 150,        // [O] N0 × visionScale
+  PICKUP_BASE: 18,           // [O] R0 — alcance de coleta
+  RESOURCE_SIZE: {           // [O] Ii — tamanho/peso do recurso
+    leaf: 28, mushroom: 40, cactus: 30,
+    banana: 30, flower: 28, crystal: 30,  } as Record<ResourceKind, number>,
+  SOLDIER_AGGRO: 220,
+  FLEE_NONE: 0,
+} as const;
 
 // ═══════════════════════════════════════════════════════════════════
-// RAINHA — lacuna L1 (docs/02 §L1)
+// NÉVOA — célula de 48px [O we=48]
+// ═══════════════════════════════════════════════════════════════════
+
+export const FOG = {
+  CELL: 48,
+  SCOUT_RADIUS: 96,     // [O] fogCell × 2
+  PASSIVE_RADIUS: 48,   // [O] fogCell × 1
+  NEST_RADIUS: 144,     // [O] fogCell × 3
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════
+// RAINHA — [O] qn/yl/ub/rb/i0/cb/s0 do bundle
 // ═══════════════════════════════════════════════════════════════════
 
 export const QUEEN = {
-  HP_MAX: 500,               // [D] Parte 4.6
-  SPRITE: 96,                // [D] Parte 12.8
-
-  HUNGER_MAX: 100,           // [P]
-  HUNGER_DRAIN: 1.0,         // [P] /s → esvazia em 100s
-  FOOD_TO_HUNGER: 5,         // [P] 1 comida = 5 fome → 0,20 comida/s
-
-  // Limiares de estado (fração de HUNGER_MAX)
-  SATED_AT: 0.70,            // [P] +10% produção
-  HUNGRY_AT: 0.30,           // [P] +50% tempo de produção
-  CRITICAL_AT: 0.10,         // [P] produção parada, 1 HP/s
-
-  DMG_CRITICAL: 1,           // [P] HP/s na faixa crítica
-  DMG_STARVING: 3,           // [P] HP/s com fome zerada
-  PROD_BONUS_SATED: 0.10,    // [P]
-  PROD_PENALTY_HUNGRY: 0.50, // [P]
+  HUNGER_MAX: 100,      // [O] yl
+  HUNGER_DRAIN: 1 / 3,  // [O] ub — esvazia em 300s
+  HUNGER_PER_ITEM: 8,   // [O] rb
+  FEED_UNTIL: 90,       // [O] i0
+  FEED_INTERVAL_SEC: 3, // [O] cb — por operária
+  WARN_AT: 30,          // [O] s0 — "A rainha está com fome!"
+  WARN_CRITICAL_AT: 10, // [O] — "A rainha está FAMINTA!"
 } as const;
 
-export const PRODUCTION = {              // [P] lacuna L1
-  EGG_MS: 6000,
-  LARVA_MS: 8000,
-  PUPA_MS: 6000,
-  TOTAL_MS: 20000,           // fila SERIAL, 1 formiga por vez
-  QUEUE_MAX: 5,
-} as const;
+/** [O] ordem em que a Rainha come os recursos (takeFoodItem) */
+export const FOOD_ORDER = ['leaf', 'mushroom', 'cactus', 'banana', 'flower', 'crystal'] as const;
 
 // ═══════════════════════════════════════════════════════════════════
-// FORMIGAS — [D] Parte 4 · velocidades/alcances [P] lacuna L4
-// ═══════════════════════════════════════════════════════════════════
-
-export const ANTS = {
-  worker: {
-    hp: 30, dmg: 5, size: 22, sprite: 32,
-    speed: 50, detect: 80, aggro: 0, attackRange: 20,
-    attacksPerSec: 0.8, windupMs: 200,
-    costFood: 8, costChitin: 0, unlocked: true,
-    repairPerSec: 10,                                   // [D] Parte 4.1
-  },
-  collector: {
-    hp: 30, dmg: 5, size: 32, sprite: 32,
-    speed: 55, detect: 140, aggro: 0, attackRange: 20,
-    attacksPerSec: 0.8, windupMs: 200,
-    costFood: 10, costChitin: 0, unlocked: true,
-    carry: 3, tripSeconds: 22, fleeRange: 100,
-  },
-  scout: {
-    hp: 28, dmg: 6, size: 32, sprite: 32,
-    speed: 75, detect: 120, aggro: 0, attackRange: 22,
-    attacksPerSec: 1.0, windupMs: 150,
-    costFood: 10, costChitin: 0, unlocked: true,
-    revealRadius: 180,                                  // não coleta (rework)
-  },
-  soldier: {
-    hp: 60, dmg: 10, size: 44, sprite: 44,
-    speed: 60, detect: 160, aggro: 200, attackRange: 28,
-    attacksPerSec: 1.2, windupMs: 250,
-    costFood: 18, costChitin: 0, unlocked: true,
-  },
-  defender: {
-    hp: 70, dmg: 9, size: 40, sprite: 40,
-    speed: 45, detect: 120, aggro: 140, attackRange: 26,
-    attacksPerSec: 1.0, windupMs: 300,
-    costFood: 25, costChitin: 10, unlocked: false,
-    ringRadius: 140,                                    // [D] anel ao redor do ninho
-  },
-  toxic: {
-    hp: 40, dmg: 12, size: 32, sprite: 32,
-    speed: 52, detect: 180, aggro: 160, attackRange: 160, // [D] projétil 160px
-    attacksPerSec: 0.7, windupMs: 400,
-    costFood: 30, costChitin: 20, unlocked: false,
-    corrosionDps: 2, corrosionSec: 3,                   // [D] Parte 4.5
-  },
-  giant: {
-    hp: 200, dmg: 18, size: 80, sprite: 80,
-    speed: 35, detect: 140, aggro: 180, attackRange: 40,
-    attacksPerSec: 0.5, windupMs: 500,
-    costFood: 50, costChitin: 40, unlocked: false,
-    knockback: 40,                                      // [D] Parte 4.5
-  },
-} as const;
-
-export const POPULATION = {              // [P] lacuna L2
-  MAX_INITIAL: 8,
-  MAX_CAP: 24,
-  START: { worker: 2, collector: 2, scout: 1, soldier: 1 },
-} as const;
-
-/** [P] Fase 2 — economia inicial (ver docs/02 §L1: 22 comida por onda) */
-export const ECONOMY = {
-  START_FOOD: 20,
-  START_CHITIN: 0,
-} as const;
-
-// Comportamento — [P] Fase 2
-export const BEHAVIOR = {
-  HARVEST_SEC_PER_UNIT: 0.8,   // coletora colhe 1 unidade
-  FEED_COOLDOWN_SEC: 2,        // operária alimenta a Rainha a cada 2s
-  SEPARATION_RADIUS: 14,       // formigas não se empilham
-  ARRIVE_RADIUS: 10,           // considero "cheguei"
-  SCOUT_IDLE_SEC: [1.5, 3.5],  // pausa da exploradora entre destinos
-  SCOUT_TRIP_MIN: 200,         // distância mínima do próximo destino
-  SCOUT_TRIP_MAX: 700,
-  SCOUT_CANDIDATES: 8,         // amostras — prefere célula não revelada
-  SOLDIER_PATROL_MIN: 90,      // anel de patrulha ao redor do ninho
-  SOLDIER_PATROL_MAX: 160,
-  SOLDIER_PAUSE_SEC: [0.5, 1.5],
-} as const;
-
-// Névoa de guerra — [P] lacuna L4 · célula de 24px (docs/06 D2)
-export const FOG = {
-  CELL: 24,
-  SCOUT_RADIUS: 180,
-  PASSIVE_RADIUS: 90,
-  NEST_RADIUS: 220,
-  PERMANENT: true,   // revelado não re-escurece; recursos/inimigos só no raio ativo
-} as const;
-
-// ═══════════════════════════════════════════════════════════════════
-// NINHO
+// NINHO — [O] qn/FA/QA
 // ═══════════════════════════════════════════════════════════════════
 
 export const NEST = {
-  HP_MAX: 400,               // [P]
-  ARMOR: 0,                  // [P]
-  STORAGE: 200,              // [P] comida
-  MOUND_RADIUS: 120,         // [P] raio visual do monte de terra
-  RUIN_EFFICIENCY: 0.50,     // [P] lacuna L5 — funciona a 50% em ruína
-  RUIN_TRUCE_SEC: 60,        // [P] trégua para reconstruir
-  REGEN_OUT_OF_COMBAT: 0,    // [P] só com carta
+  HP_MAX: 400,            // [O] qn
+  REGEN_PER_SEC: 1.2,     // [O] FA — sem inimigo por perto
+  REGEN_ENEMY_RADIUS: 320,// [O] enemyNearNest(320)
+  REPAIR_PER_WORKER: 10,  // [O] QA — por operária, com ninho destruído
+  MOUND_RADIUS: 110,      // [P] raio de clique/desenho
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════
-// RECURSOS E ECONOMIA — [D] Parte 5
+// XP E NÍVEIS — [O] depósito = 3(+xpboost) · nível n = 50+25(n−1)
 // ═══════════════════════════════════════════════════════════════════
 
-export const RESOURCES = {
-  leaf:     { food: 2, xp: 2, sprite: 24 },
-  mushroom: { food: 2, xp: 2, sprite: 24 },
-  cactus:   { food: 2, xp: 2, sprite: 32 },
-  banana:   { food: 3, xp: 3, sprite: 32 },
-  flower:   { food: 2, xp: 2, sprite: 24 },
-  crystal:  { food: 3, xp: 3, sprite: 32 },
+export const XP = {
+  PER_DEPOSIT: 3,           // [O]
+  PER_ENEMY_BASE: 8,        // [O] por espécie (ver ENEMIES.xp), ×poder da onda
+  WAVE_REWARD_BASE: 15,     // [O]
+  WAVE_REWARD_PER: 5,       // [O]
 } as const;
-// valor médio ≈ 2,2 comida — base das simulações de balanceamento
 
-export const CHITIN = {                  // [D] Parte 5
-  ELITE_MIN: 1, ELITE_MAX: 2,
-  BOSS_MIN: 2,  BOSS_MAX: 4,
-  PERSISTS_ON_REBIRTH: true,
-} as const;
+/** [O] 50+25(n−1) */
+export const xpToNextLevel = (level: number): number => 50 + 25 * (level - 1);
+
+/** nível total dado o XP acumulado [O qa] */
+export function levelFromXp(xp: number): number {
+  let level = 1;
+  let rest = xp;
+  while (rest >= xpToNextLevel(level)) {
+    rest -= xpToNextLevel(level);
+    level++;
+  }
+  return level;
+}
 
 // ═══════════════════════════════════════════════════════════════════
-// ROGUELIKE — [D] Parte 6 · valores de XP [P] lacuna L3 (Fase 5)
-// ═══════════════════════════════════════════════════════════════════
-
-/** [D] Parte 6.2 — XP necessária = 10 × nível + 8 × nível² (decisão D3b) */
-export const xpToNextLevel = (level: number): number => 10 * level + 8 * level * level;
-
-export const XP = {                      // [P] lacuna L3
-  PER_RESOURCE_FOOD: 1.0,    // × valor em comida
-  PER_ENEMY: 5,              // × força da onda  ← escala
-  PER_WAVE: 15,              // × número da onda ← escala
-  PER_ELITE: 40,
-  PER_BOSS: 150,
-  PER_OBJECTIVE_MIN: 25,
-  PER_OBJECTIVE_MAX: 100,
-} as const;
-// Simulação: nível 9 na onda 10 · nível 15 na onda 20 · nível 20 na onda 30
-
-export const CARD_PANEL = {
-  MIN_OPTIONS: 3,            // [D] Parte 6.2
-  MAX_OPTIONS: 5,            // [D]
-  DEFAULT_OPTIONS: 4,        // [P]
-  FREEZE_WORLD: true,        // [D]
-} as const;
-
-export const RARITY_WEIGHTS = {          // [P] ver 03_BARALHO_ROGUELIKE §2
-  base:  { comum: 60, incomum: 25, rara: 10, epica: 4, lendaria: 1 },
-  perLevel: { comum: -2.2, incomum: 0.5, rara: 0.9, epica: 0.6, lendaria: 0.2 },
-  floor: { comum: 20 },
-} as const;
-
-export const SYNERGY = {                 // [P]
-  WEIGHT_BONUS: 0.15,        // +15% por carta do mesmo eixo
-  WEIGHT_CAP: 0.60,
-} as const;
-
-export const BUILD_SLOTS = {             // [D] Parte 6.5 · resolução [P] lacuna L9
-  SPECIALIZATION: 3, SPECIALIZATION_MAX: 6,
-  BEHAVIOR: 3,       BEHAVIOR_MAX: 5,
-  PASSIVE: 2,        PASSIVE_MAX: 4,
-  REFUND_ON_REPLACE: 0.50,
-} as const;
-
-export const CHESTS = {                  // [D] Parte 6.7
-  common: { options: 3, guaranteed: null },
-  elite:  { options: 4, guaranteed: 'rara' },
-  boss:   { options: 5, guaranteed: 'rara_ou_epica' },
-  legend: { options: 3, guaranteed: 'evolucao_ou_item' },
-} as const;
-
-// ═══════════════════════════════════════════════════════════════════
-// ONDAS — [D] Parte 7 · D6: calmaria fixa de 30s
+// ONDAS — [O] Tr=20 · LA=90 · U0=2 · ZA=15 · poder min(0,5·1,1^(n−1), 3)
 // ═══════════════════════════════════════════════════════════════════
 
 export const WAVES = {
-  COMBAT_SEC: 20,            // [D]
-  CALM_SEC_DEFAULT: 30,      // [D] decisão D6 do usuário (28/08/2026)
-  ENEMIES_BASE: 2,           // [D]
-  ENEMIES_PER_WAVE: 2,       // [D]
-  STRENGTH_BASE: 0.50,       // [D]
-  STRENGTH_PER_WAVE: 0.10,   // [D]
-  STRENGTH_CAP: 3.0,         // [D] atingido na onda 26
-  TELEGRAPH_SEC: 2,          // [D]
-  ELITE_EVERY: 5,            // [D]
-  BOSS_EVERY: 10,            // [D]
-  ELITE_STAT_MULT: 1.5,      // [D]
-  BOSS_ESCORT_MULT: 0.5,     // [D]
-
-  /** Desligado por decisão D6. Mantido para referência/futuro ajuste. */
-  USE_DYNAMIC_CALM: false,
-  DYNAMIC_CALM: [
-    { upToWave: 5,  calmSec: 90 },
-    { upToWave: 10, calmSec: 70 },
-    { upToWave: 20, calmSec: 55 },
-    { upToWave: Infinity, calmSec: 40 },
-  ],
+  COMBAT_SEC: 20,        // [O] Tr
+  CALM_SEC: 90,          // [O] LA
+  BATCH_SIZE: 2,         // [O] U0 — spawnam 2 por vez
+  BOSS_EVERY: 15,        // [O] ZA — chefe a cada 15 ondas
+  BOSS_ESCORTS: 2,       // [O] chefe + 2 escoltas a 0,5
+  BOSS_ESCORT_POWER: 0.5,// [O]
+  MAX_CONCURRENT: 100,   // [O] CA
+  COUNT_PER_WAVE: (n: number): number => 2 * n,                    // [O]
+  POWER: (n: number): number => Math.min(0.5 * Math.pow(1.1, n - 1), 3), // [O]
+  REWARD_LEAVES: (n: number): number => 3 + 2 * n,                 // [O]
+  NEST_HEAL_FRAC: 0.2,   // [O] ninho recupera 20% ao repelir onda
 } as const;
 
-export const enemyCount = (wave: number, isBoss: boolean): number => {
-  const n = WAVES.ENEMIES_BASE + WAVES.ENEMIES_PER_WAVE * (wave - 1);
-  return isBoss ? Math.floor(n * WAVES.BOSS_ESCORT_MULT) : n;
+// ═══════════════════════════════════════════════════════════════════
+// INIMIGOS — [O] tabela Ur completa do bundle
+// ═══════════════════════════════════════════════════════════════════
+
+export type EnemyKind =
+  | 'mosquito' | 'wasp' | 'caterpillar' | 'hornet' | 'spider' | 'slug'
+  | 'scorpion' | 'beetle' | 'moth' | 'mantis' | 'centipede' | 'antlion';
+
+export interface EnemyStats {
+  name: string; icon: string;
+  hp: number; damage: number; speed: number;
+  aggro: number; r: number; scale: number; xp: number;
+}
+
+export const ENEMIES: Record<EnemyKind, EnemyStats> = {
+  mosquito:    { name: 'Mosquito',       icon: '🦟', hp: 60,  damage: 4,  speed: 62, aggro: 170, r: 70,  scale: 110, xp: 8 },
+  wasp:        { name: 'Vespa',          icon: '🐝', hp: 70,  damage: 8,  speed: 80, aggro: 200, r: 60,  scale: 110, xp: 14 },
+  caterpillar: { name: 'Lagarta',        icon: '🐛', hp: 80,  damage: 5,  speed: 20, aggro: 120, r: 80,  scale: 170, xp: 9 },
+  hornet:      { name: 'Marimbondo',     icon: '🐝', hp: 90,  damage: 9,  speed: 70, aggro: 210, r: 65,  scale: 120, xp: 15 },
+  spider:      { name: 'Aranha',         icon: '🕷️', hp: 100, damage: 6,  speed: 26, aggro: 150, r: 100, scale: 200, xp: 10 },
+  slug:        { name: 'Lesma',          icon: '🐌', hp: 120, damage: 8,  speed: 15, aggro: 120, r: 85,  scale: 200, xp: 16 },
+  scorpion:    { name: 'Escorpião',      icon: '🦂', hp: 140, damage: 9,  speed: 24, aggro: 160, r: 100, scale: 220, xp: 18 },
+  beetle:      { name: 'Besouro',        icon: '🪲', hp: 160, damage: 7,  speed: 18, aggro: 130, r: 90,  scale: 170, xp: 16 },
+  moth:        { name: 'Mariposa',       icon: '🦋', hp: 160, damage: 12, speed: 60, aggro: 200, r: 90,  scale: 210, xp: 22 },
+  mantis:      { name: 'Louva-a-deus',   icon: '🦗', hp: 200, damage: 11, speed: 30, aggro: 180, r: 110, scale: 240, xp: 24 },
+  centipede:   { name: 'Lacraia',        icon: '🪱', hp: 240, damage: 14, speed: 34, aggro: 190, r: 110, scale: 260, xp: 28 },
+  antlion:     { name: 'Formiga-leão',   icon: '🦁', hp: 300, damage: 12, speed: 14, aggro: 200, r: 130, scale: 290, xp: 30 },
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════
+// MAPAS — [O] configuração Tt completa do bundle
+// ═══════════════════════════════════════════════════════════════════
+
+export type MapId = 'campo' | 'pantano' | 'deserto' | 'montanha' | 'caverna' | 'selva';
+export type ResourceKind = 'leaf' | 'mushroom' | 'cactus' | 'banana' | 'flower' | 'crystal';
+
+export interface MapConfig {
+  name: string; icon: string; unlockHint: string;
+  ground: string; groundAlt: string;
+  world: { w: number; h: number };
+  resource: ResourceKind; resourceCount: number;
+  enemies: ReadonlyArray<{ kind: EnemyKind; count: number }>;
+  boss: { name: string; kind: EnemyKind; hp: number; damage: number; speed: number; aggro: number; r: number; scale: number; xp: number; drops: Partial<Record<ResourceKind, number>> };
+  scenery: { pools: number; motes: number; trees: number; stones: number; grass: number; flowers: number };
+  seed: number;
+}
+
+export const MAPS: Record<MapId, MapConfig> = {
+  campo: {
+    name: 'Campo', icon: '🌾', unlockHint: 'Disponível desde o início',
+    ground: '#59a04c', groundAlt: '#4c8f41',
+    world: { w: 3400, h: 2400 },
+    resource: 'leaf', resourceCount: 100,
+    enemies: [
+      { kind: 'spider', count: 7 }, { kind: 'caterpillar', count: 5 },
+      { kind: 'beetle', count: 4 }, { kind: 'wasp', count: 3 },
+      { kind: 'antlion', count: 1 },
+    ],
+    boss: { name: 'Formiga Vermelha Rei', kind: 'antlion', hp: 1500, damage: 18, speed: 16, aggro: 300, r: 136, scale: 800, xp: 120, drops: { leaf: 30 } },
+    scenery: { pools: 0, motes: 46, trees: 18, stones: 18, grass: 220, flowers: 50 },
+    seed: 1234,
+  },
+  pantano: {
+    name: 'Pântano', icon: '🐸', unlockHint: 'Explore 30% do Campo',
+    ground: '#4d7a5a', groundAlt: '#43684f',
+    world: { w: 3400, h: 2400 },
+    resource: 'mushroom', resourceCount: 90,
+    enemies: [
+      { kind: 'mosquito', count: 7 }, { kind: 'caterpillar', count: 5 },
+      { kind: 'wasp', count: 4 }, { kind: 'beetle', count: 3 },
+      { kind: 'hornet', count: 3 }, { kind: 'antlion', count: 1 },
+    ],
+    boss: { name: 'Rainha dos Mosquitos', kind: 'mosquito', hp: 2100, damage: 17, speed: 46, aggro: 320, r: 112, scale: 580, xp: 150, drops: { mushroom: 25 } },
+    scenery: { pools: 9, motes: 30, trees: 32, stones: 12, grass: 120, flowers: 16 },
+    seed: 9876,
+  },
+  deserto: {
+    name: 'Deserto', icon: '🏜️', unlockHint: 'Explore 40% do Pântano',
+    ground: '#d9b55c', groundAlt: '#c8a34a',
+    world: { w: 3600, h: 2600 },
+    resource: 'cactus', resourceCount: 80,
+    enemies: [
+      { kind: 'scorpion', count: 6 }, { kind: 'beetle', count: 4 },
+      { kind: 'wasp', count: 3 }, { kind: 'spider', count: 4 },
+      { kind: 'mantis', count: 2 }, { kind: 'antlion', count: 1 },
+    ],
+    boss: { name: 'Escorpião Imperador', kind: 'scorpion', hp: 2800, damage: 22, speed: 22, aggro: 340, r: 144, scale: 820, xp: 180, drops: { cactus: 20 } },
+    scenery: { pools: 0, motes: 26, trees: 0, stones: 30, grass: 60, flowers: 8 },
+    seed: 3333,
+  },
+  montanha: {
+    name: 'Montanha', icon: '⛰️', unlockHint: 'Explore 50% do Deserto',
+    ground: '#7d837d', groundAlt: '#6c726c',
+    world: { w: 3600, h: 2600 },
+    resource: 'flower', resourceCount: 80,
+    enemies: [
+      { kind: 'mantis', count: 6 }, { kind: 'scorpion', count: 3 },
+      { kind: 'hornet', count: 4 }, { kind: 'beetle', count: 3 },
+      { kind: 'antlion', count: 2 },
+    ],
+    boss: { name: 'Rei Louva-a-Deus', kind: 'mantis', hp: 3800, damage: 26, speed: 26, aggro: 360, r: 152, scale: 860, xp: 220, drops: { flower: 20 } },
+    scenery: { pools: 2, motes: 34, trees: 22, stones: 30, grass: 40, flowers: 12 },
+    seed: 4444,
+  },
+  caverna: {
+    name: 'Caverna', icon: '⛏️', unlockHint: 'Explore 60% da Montanha',
+    ground: '#3a2f35', groundAlt: '#2f262b',
+    world: { w: 3800, h: 2800 },
+    resource: 'crystal', resourceCount: 90,
+    enemies: [
+      { kind: 'centipede', count: 6 }, { kind: 'scorpion', count: 4 },
+      { kind: 'spider', count: 4 }, { kind: 'beetle', count: 3 },
+      { kind: 'mantis', count: 2 }, { kind: 'antlion', count: 1 },
+    ],
+    boss: { name: 'Rainha Lacraia', kind: 'centipede', hp: 4200, damage: 28, speed: 26, aggro: 360, r: 160, scale: 900, xp: 240, drops: { crystal: 25 } },
+    scenery: { pools: 1, motes: 20, trees: 10, stones: 36, grass: 20, flowers: 4 },
+    seed: 5555,
+  },
+  selva: {
+    name: 'Selva', icon: '🌴', unlockHint: 'Explore 70% da Caverna',
+    ground: '#2e7d32', groundAlt: '#256428',
+    world: { w: 4000, h: 3000 },
+    resource: 'banana', resourceCount: 80,
+    enemies: [
+      { kind: 'moth', count: 6 }, { kind: 'slug', count: 5 },
+      { kind: 'spider', count: 4 }, { kind: 'wasp', count: 4 },
+      { kind: 'mantis', count: 2 }, { kind: 'hornet', count: 2 },
+      { kind: 'antlion', count: 1 },
+    ],
+    boss: { name: 'Mariposa Tita', kind: 'moth', hp: 5200, damage: 30, speed: 30, aggro: 380, r: 168, scale: 920, xp: 280, drops: { banana: 20 } },
+    scenery: { pools: 2, motes: 40, trees: 60, stones: 18, grass: 200, flowers: 30 },
+    seed: 6666,
+  },
 };
 
-export const waveStrength = (wave: number): number =>
-  Math.min(WAVES.STRENGTH_BASE + WAVES.STRENGTH_PER_WAVE * (wave - 1), WAVES.STRENGTH_CAP);
+/** [O] ordem de desbloqueio + % de exploração exigida (Ab) */
+export const MAP_UNLOCK: Record<MapId, { next: MapId; pct: number }> = {
+  campo:    { next: 'pantano', pct: 30 },
+  pantano:  { next: 'deserto', pct: 40 },
+  deserto:  { next: 'montanha', pct: 50 },
+  montanha: { next: 'caverna', pct: 60 },
+  caverna:  { next: 'selva', pct: 70 },
+  selva:    { next: 'selva', pct: 100 },
+};
 
-// ═══════════════════════════════════════════════════════════════════
-// INIMIGOS E CHEFES — [P] (bestiário completo na Fase 4)
-// ═══════════════════════════════════════════════════════════════════
-
-export const ENEMIES = {
-  spider:    { hp: 25, dmg: 8,  speed: 50, size: 32, aggro: 150 },
-  caterpillar:{hp: 45, dmg: 5,  speed: 30, size: 40, aggro: 150 },
-  wasp:      { hp: 20, dmg: 12, speed: 70, size: 32, aggro: 180, flying: true },
-  scorpion:  { hp: 40, dmg: 14, speed: 45, size: 48, aggro: 180, poisonDps: 2, poisonSec: 3 },
-  beetle:    { hp: 70, dmg: 10, speed: 35, size: 48, aggro: 150, armor: 3 },
-  frog:      { hp: 90, dmg: 18, speed: 40, size: 64, aggro: 200, swallow: true },
-} as const;
-
-export const BOSSES = {
-  campo:    { hp: 600,  dmg: 20, phases: 2, chitin: 3, size: 96 },
-  pantano:  { hp: 850,  dmg: 24, phases: 2, chitin: 3, size: 112 },
-  caverna:  { hp: 1100, dmg: 28, phases: 3, chitin: 4, size: 128 },
-  deserto:  { hp: 1400, dmg: 32, phases: 3, chitin: 4, size: 128 },
-  montanha: { hp: 1800, dmg: 38, phases: 3, chitin: 4, size: 144 },
-  selva:    { hp: 2400, dmg: 45, phases: 4, chitin: 5, size: 160 },
+export const RESOURCES: Record<ResourceKind, { name: string; icon: string; food: number }> = {
+  leaf:     { name: 'Folha',   icon: '🍃', food: 2 },
+  mushroom: { name: 'Cogumelo',icon: '🍄', food: 2 },
+  cactus:   { name: 'Cacto',   icon: '🌵', food: 2 },
+  banana:   { name: 'Banana',  icon: '🍌', food: 3 },
+  flower:   { name: 'Flor',    icon: '🌸', food: 2 },
+  crystal:  { name: 'Cristal', icon: '💎', food: 3 },
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════
-// DERROTA — [P] lacuna L5 (Fase 4+)
+// LOJA — [O] grade Yr completa (16 melhorias, 4 categorias)
 // ═══════════════════════════════════════════════════════════════════
 
-export const DEFEAT = {
-  PARTIAL: {   // ninho a 0, Rainha viva → a run CONTINUA
-    trigger: 'nest_hp_zero',
-    killExternalAnts: true,
-    keepInternalAnts: true,
-    loseCarriedResources: true,
-    cancelCurrentWave: true,
-    truceSec: 60,
-    keepCards: true,
-  },
-  TOTAL: {     // Rainha a 0 → fim da run
-    trigger: 'queen_hp_zero',
-    endRun: true,
-    loseBuild: true,
-    keepChitin: true,
-    grantRunRewards: true,
-  },
+export type UpgradeCategory = 'coleta' | 'ataque' | 'defesa' | 'niveis';
+
+export interface UpgradeDef {
+  id: string;
+  category: UpgradeCategory;
+  icon: string;
+  name: string;
+  desc: string;
+  cost: { kind: ResourceKind; amount: number };
+  max: number;          // Infinity para dinâmicos
+  step?: number;        // acréscimo de custo por compra (dinâmicos)
+}
+
+export const UPGRADES: ReadonlyArray<UpgradeDef> = [
+  { id: 'antlimit',  category: 'coleta',  icon: '🐜', name: '+5 Operárias',       desc: 'Recruta 5 operárias para a colônia (preço cresce a cada compra).', cost: { kind: 'leaf', amount: 15 },     max: Infinity, step: 10 },
+  { id: 'soldier',   category: 'ataque',  icon: '⚔️', name: '+5 Soldados',        desc: 'Recruta 5 soldados para defender a colônia (preço cresce a cada compra).', cost: { kind: 'mushroom', amount: 25 }, max: Infinity, step: 15 },
+  { id: 'scout',     category: 'coleta',  icon: '💨', name: '+5 Exploradoras',   desc: 'Recruta 5 exploradoras rápidas (preço cresce a cada compra).',   cost: { kind: 'leaf', amount: 25 },     max: Infinity, step: 15 },
+  { id: 'speed',     category: 'coleta',  icon: '⚡', name: '+10% Velocidade',   desc: 'Todas as formigas se movem mais rápido.',                        cost: { kind: 'leaf', amount: 30 },     max: 8 },
+  { id: 'capacity',  category: 'coleta',  icon: '🎒', name: '+1 Carga',          desc: 'As formigas carregam mais recursos por vez.',                    cost: { kind: 'leaf', amount: 25 },     max: 3 },
+  { id: 'vision',    category: 'coleta',  icon: '👁️', name: '+15% Visão',       desc: 'As formigas enxergam recursos e inimigos mais longe.',           cost: { kind: 'leaf', amount: 15 },     max: 8 },
+  { id: 'luck',      category: 'coleta',  icon: '🍀', name: 'Sorte',             desc: 'Chance de recurso extra a cada coleta.',                         cost: { kind: 'leaf', amount: 15 },     max: 8 },
+  { id: 'strength',  category: 'ataque',  icon: '💪', name: '+10% Força',        desc: 'Formigas causam mais dano.',                                     cost: { kind: 'mushroom', amount: 40 }, max: 8 },
+  { id: 'attackspeed', category: 'ataque', icon: '⚔️', name: '+15% Ataque',     desc: 'Formigas atacam mais rápido.',                                   cost: { kind: 'mushroom', amount: 35 }, max: 6 },
+  { id: 'crit',      category: 'ataque',  icon: '💥', name: '+10% Crítico',     desc: 'Chance de dano crítico em dobro.',                               cost: { kind: 'mushroom', amount: 25 }, max: 8 },
+  { id: 'critdmg',   category: 'ataque',  icon: '💢', name: '+50% Crítico',     desc: 'Dano crítico ainda maior.',                                      cost: { kind: 'mushroom', amount: 20 }, max: 6 },
+  { id: 'armor',     category: 'defesa',  icon: '🛡️', name: '−10% Dano',       desc: 'Formigas recebem menos dano.',                                   cost: { kind: 'cactus', amount: 20 },   max: 8 },
+  { id: 'hpboost',   category: 'defesa',  icon: '❤️', name: '+15% Vida',       desc: 'Formigas têm mais vida.',                                        cost: { kind: 'cactus', amount: 20 },   max: 8 },
+  { id: 'heal',      category: 'defesa',  icon: '💚', name: 'Regeneração',      desc: 'Formigas recuperam vida com o tempo.',                           cost: { kind: 'cactus', amount: 15 },   max: 5 },
+  { id: 'respawn',   category: 'defesa',  icon: '♻️', name: 'Renascer Rápido',  desc: 'Formigas renascem mais rápido após morrer.',                     cost: { kind: 'cactus', amount: 20 },   max: 5 },
+  { id: 'xpboost',   category: 'niveis',  icon: '⭐', name: '+1 XP',            desc: 'Cada recurso entregue vale mais XP.',                            cost: { kind: 'banana', amount: 12 },   max: 8 },
+];
+
+/** [O] custo atual: amount + step × compras (dinâmicos) */
+export function upgradeCost(def: UpgradeDef, bought: number): { kind: ResourceKind; amount: number } {
+  return {
+    kind: def.cost.kind,
+    amount: def.cost.amount + (def.step ?? 0) * bought,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ECONOMIA / SAVE / MOTOR
+// ═══════════════════════════════════════════════════════════════════
+
+export const ECONOMY = {
+  START_RESOURCES: { leaf: 10 } as Partial<Record<ResourceKind, number>>, // [P] estoque inicial
+  LUCK_BONUS_CHANCE: 0.1, // [O] 10% × nível de sorte por item depositado
 } as const;
-
-// ═══════════════════════════════════════════════════════════════════
-// RENASCIMENTO — [P] lacuna L7 (Fase 6)
-// ═══════════════════════════════════════════════════════════════════
-
-export const REBIRTH = {
-  UNLOCK_AFTER_BOSS: true,
-  UNLOCK_AT_WAVE: 15,
-  /** floor( √(onda × 2) + chefes × 3 + nível ÷ 4 ) */
-  points: (wave: number, bosses: number, level: number): number =>
-    Math.floor(Math.sqrt(wave * 2) + bosses * 3 + level / 4),
-  BONUSES: {
-    veteran:    { cost: 5,  effect: '+1 formiga inicial',     max: 6 },
-    reserves:   { cost: 8,  effect: '+20 comida inicial',     max: 5 },
-    instinct:   { cost: 10, effect: '+10% XP',                max: 8 },
-    strongCaste:{ cost: 12, effect: '+5% HP das formigas',    max: 10 },
-    resilient:  { cost: 15, effect: '+10% fome máxima',       max: 5 },
-    luck:       { cost: 20, effect: '+5% raridade alta',      max: 5 },
-    extraSlot:  { cost: 40, effect: '+1 slot de build',       max: 3 },
-  },
-} as const;
-
-// ═══════════════════════════════════════════════════════════════════
-// SAVE — [D] Parte 8 · debounce [P] lacuna L11
-// ═══════════════════════════════════════════════════════════════════
 
 export const SAVE = {
-  VERSION: 1,
-  KEY: 'formigueiro_save_v1',
-  BACKUP_SLOTS: 3,
-  DEBOUNCE_MS: 5000,         // coleta, produção, dano
-  PERIODIC_MS: 30000,        // rede de segurança
-  IMMEDIATE_EVENTS: [        // save síncrono
-    'run_start', 'level_up', 'card_chosen', 'chest_opened',
-    'boss_defeated', 'wave_end', 'interior_enter', 'interior_exit',
-    'defeat', 'rebirth',
-  ],
+  VERSION: 2,
+  KEY: 'formigueiro_save_v2',
+  DEBOUNCE_MS: 5000,
+  PERIODIC_MS: 30000,
   USE_CHECKSUM: true,
-  FALLBACK_TO_INDEXEDDB: true,
 } as const;
-
-// ═══════════════════════════════════════════════════════════════════
-// INTERIOR — [D] Parte 3.3, coordenadas normalizadas
-// ═══════════════════════════════════════════════════════════════════
-
-export const INTERIOR_ROOMS = {
-  exit:        { x: 0.50, y: 0.10, w: 0.16, h: 0.10 },
-  cemetery:    { x: 0.16, y: 0.17, w: 0.18, h: 0.12 },
-  achievements:{ x: 0.20, y: 0.34, w: 0.18, h: 0.12 },
-  missions:    { x: 0.16, y: 0.52, w: 0.18, h: 0.12 },
-  ants:        { x: 0.18, y: 0.70, w: 0.17, h: 0.12 },
-  map:         { x: 0.16, y: 0.87, w: 0.18, h: 0.12 },
-  upgrades:    { x: 0.82, y: 0.21, w: 0.18, h: 0.12 },
-  shop:        { x: 0.80, y: 0.40, w: 0.18, h: 0.12 },
-  inventory:   { x: 0.83, y: 0.58, w: 0.18, h: 0.12 },
-  rebirth:     { x: 0.82, y: 0.75, w: 0.18, h: 0.12 },
-  queen:       { x: 0.50, y: 0.90, w: 0.34, h: 0.19 },
-} as const;
-
-export const INTERIOR_BARS = { y: 0.81 } as const;  // [D] FOME e COMIDA sobre a Sala da Rainha
-
-// ═══════════════════════════════════════════════════════════════════
-// HUD DO MAPA EXTERNO — [D] Parte 3.2
-// ═══════════════════════════════════════════════════════════════════
-
-export const HUD = {
-  nest:      { x: 0.02, y: 0.02, w: 0.30 },
-  resources: { x: 0.35, y: 0.02, w: 0.38 },
-  wave:      { x: 0.50, y: 0.08 },
-  objective: { x: 0.02, y: 0.17 },
-  hunger:    { x: 0.34, y: 0.91, w: 0.32 },
-  food:      { x: 0.66, y: 0.91, w: 0.25 },
-} as const;
-
-// ═══════════════════════════════════════════════════════════════════
-// MENU INICIAL — [D] Parte 3.1
-// ═══════════════════════════════════════════════════════════════════
-
-export const MAIN_MENU = {
-  logo:      { x: 0.50, y: 0.14, w: 0.50, h: 0.12 },
-  subtitle:  { x: 0.50, y: 0.27 },
-  queen:     { x: 0.50, y: 0.40, w: 0.18, h: 0.18 },
-  playBtn:   { x: 0.50, y: 0.60, w: 0.28, h: 0.07 },
-  invBtn:    { x: 0.50, y: 0.69, w: 0.28, h: 0.07 },
-  missionBtn:{ x: 0.50, y: 0.78, w: 0.28, h: 0.07 },
-} as const;
-
-// ═══════════════════════════════════════════════════════════════════
-// MOTOR — [P] infra, não balanceamento
-// ═══════════════════════════════════════════════════════════════════
 
 export const ENGINE = {
-  MAX_FRAME_SEC: 0.25,       // clamp do delta (aba em background)
-  MAX_STEPS_PER_FRAME: 8,    // sem spiral of death
-  HUD_PUBLISH_HZ: 8,         // frequência de re-render da interface
-  FOG_ACTIVE_HZ: 4,          // recalculo do raio ativo
+  MAX_FRAME_SEC: 0.25,
+  MAX_STEPS_PER_FRAME: 8,
+  HUD_PUBLISH_HZ: 8,
+  FOG_ACTIVE_HZ: 4,
   SEPARATION_EVERY_STEPS: 3,
   TOAST_SEC: 5,
   SPATIAL_CELL: 64,
@@ -483,5 +426,5 @@ export const ENGINE = {
 
 export const APP = {
   NAME: 'FORMIGUEIRO',
-  SUBTITLE: 'Jogo de colônia, exploração e sobrevivência roguelike',
+  SUBTITLE: 'Jogo de colônia, exploração e sobrevivência',
 } as const;
