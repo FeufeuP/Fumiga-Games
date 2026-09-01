@@ -38,6 +38,8 @@ export class Clock {
       this.acc -= FIXED_DT;
       this.runSeconds += FIXED_DT;
       n++;
+      // painel de cartas/gameOver pode pausar DENTRO do passo — congela já
+      if (this.paused) break;
     }
     // Se ainda sobrar dívida (aba voltou do background), descarta — sem spiral.
     if (this.acc > FIXED_DT) this.acc = 0;

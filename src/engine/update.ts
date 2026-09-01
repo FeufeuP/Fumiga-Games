@@ -10,7 +10,7 @@ import {
 } from '../core/constants';
 import { updateAnt } from '../entities/ants';
 import { createEnemy, createBoss, updateEnemy } from '../entities/enemies';
-import { updateQueen, nestRegen, nestRepair } from '../systems/queen';
+import { updateQueen, nestRegen, nestRepair, type QueenState } from '../systems/queen';
 import { applySeparation, clampToWorld } from './movement';
 import type { Ant, AntClass, AntWorld, Enemy, Toast } from '../core/types';
 
@@ -34,14 +34,20 @@ export interface SimHost extends AntWorld {
   exploredPct: number;
 
   // rainha / ninho
-  queen: { hunger: number; dead: boolean; feedT: number; warn30: boolean; warn10: boolean };
+  queen: QueenState;
   nestHp: number;
+  /** HP máximo do ninho (upgrades + cartas) */
+  nestHpMax(): number;
+  /** concede recurso respeitando o teto da Despensa (carta 5A) */
+  grantResource(kind: ResourceKind, n: number): void;
+  /** adiciona XP já com o bônus de eficiência das cartas (5A) */
+  addXp(n: number): void;
 
   spawnAnt(cls: AntClass): void;
   spawnWaveEnemy(power?: number): void;
   spawnBoss(): void;
   pushToast(text: string, kind: Toast['kind']): void;
-  onLevelUp(level: number): void;
+  onLevelUp(level: number, gained: number): void;
   onQueenDead(): void;
   onBossDefeated(e: Enemy): void;
   onMapUnlocked(mapId: MapId): void;
@@ -147,19 +153,29 @@ export function stepSimulation(host: SimHost, dt: number): void {
       workerCount: () => host.ownedAnts.worker,
       toast: (text, kind) => host.pushToast(text, kind),
       onQueenDead: () => host.onQueenDead(),
-    }, dt);
+    }, dt, {
+      drainMult: host.cardMods.hungerDrainMult,       // Apetite contido
+      perItemBonus: host.cardMods.hungerPerItemBonus, // Porção reforçada
+    });
 
     // ── ninho: regen fora de combate ou reparo em ruína ────────────
+    // (Reparo rápido acelera os dois; Fortaleza viva regenera sozinha)
+    const cm = host.cardMods;
     const enemyNear = host.enemies.some(
       (e) =>
         host.fog.isRevealed(e.x, e.y) &&
         Math.hypot(e.x - host.nest.x, e.y - host.nest.y) < NEST.REGEN_ENEMY_RADIUS,
     );
+    const hpMax = host.nestHpMax();
     if (host.nestHp > 0) {
-      host.nestHp = nestRegen(host.nestHp, NEST.HP_MAX, enemyNear, dt);
+      host.nestHp = nestRegen(host.nestHp, hpMax, enemyNear, dt * cm.repairMult);
+      // Fortaleza viva (carta 5A): regen extra fora de combate
+      if (!enemyNear && host.nestHp > 0 && host.nestHp < hpMax && cm.nestRegenBonus > 0) {
+        host.nestHp = Math.min(hpMax, host.nestHp + cm.nestRegenBonus * dt);
+      }
     } else {
       const workers = host.ants.filter((a) => a.cls === 'worker' && a.hp > 0).length;
-      const r = nestRepair(host.nestHp, NEST.HP_MAX, workers, dt);
+      const r = nestRepair(host.nestHp, hpMax, workers, dt * cm.repairMult);
       if (r.rebuilt) {
         host.nestHp = r.hp;
         host.pushToast('O formigueiro foi reconstruído pelas operárias!', 'success');
@@ -172,8 +188,9 @@ export function stepSimulation(host: SimHost, dt: number): void {
   // ── XP / nível ───────────────────────────────────────────────────
   const lv = levelFromXp(host.xp);
   if (lv > host.level) {
+    const gained = lv - host.level;
     host.level = lv;
-    host.onLevelUp(lv);
+    host.onLevelUp(lv, gained);
   }
 
   // ── exploração (0,5s) e desbloqueio ─────────────────────────────
@@ -239,11 +256,12 @@ function updateWaves(host: SimHost, dt: number): void {
 function waveReward(host: SimHost): void {
   const n = host.wave.num;
   const leaves = WAVES.REWARD_LEAVES(n);
-  host.wallet.leaf = (host.wallet.leaf ?? 0) + leaves;
-  host.xp += XP.WAVE_REWARD_BASE + XP.WAVE_REWARD_PER * n;
-  const heal = Math.round(NEST.HP_MAX * WAVES.NEST_HEAL_FRAC);
+  host.grantResource('leaf', leaves);
+  host.addXp(XP.WAVE_REWARD_BASE + XP.WAVE_REWARD_PER * n);
+  const hpMax = host.nestHpMax();
+  const heal = Math.round(hpMax * WAVES.NEST_HEAL_FRAC);
   const before = host.nestHp;
-  host.nestHp = Math.min(NEST.HP_MAX, host.nestHp + heal);
+  host.nestHp = Math.min(hpMax, host.nestHp + heal);
   const healed = Math.round(host.nestHp - before);
   host.pushToast(
     `Onda repelida! +${leaves} folhas${healed > 0 ? ` e o ninho recuperou ${healed} de vida` : ''}.`,

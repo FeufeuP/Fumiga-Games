@@ -6,6 +6,8 @@ import type { AntClass, EnemyKind, MapId, ResourceKind, UpgradeDef } from './con
 import type { Rng } from './rng';
 import type { EventBus } from './events';
 import type { FogOfWar } from '../engine/fogOfWar';
+import type { CardMods } from '../roguelike/modifiers';
+import type { CartaPainel } from '../roguelike/cardPool';
 
 export type { AntClass, EnemyKind, MapId, ResourceKind, UpgradeDef };
 
@@ -165,6 +167,8 @@ export interface AntWorld {
   readonly frontierR: number;
   /** multiplicadores derivados das melhorias compradas */
   readonly mods: AntMods;
+  /** modificadores das cartas roguelike (5A — modifiers.ts) */
+  readonly cardMods: CardMods;
   /** buffs momentâneos do rally [O] */
   readonly buffs: { collectSpeedMult: number; attackCdMult: number };
 
@@ -244,4 +248,6 @@ export interface HudState {
   achievements: { done: number; total: number; progress: Array<{ id: string; title: string; desc: string; value: number; goal: number; done: boolean }> };
   rebirths: number;
   score: number;
+  /** painel de level-up do baralho roguelike (5A) — aberto congela o mundo */
+  cardPanel: { level: number; choices: CartaPainel[] } | null;
 }

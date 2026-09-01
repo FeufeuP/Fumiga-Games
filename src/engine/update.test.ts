@@ -7,6 +7,7 @@ import { createAnt, resetAntIds } from '../entities/ants';
 import { resetEnemyIds } from '../entities/enemies';
 import { createQueenState } from '../systems/queen';
 import { modsFrom, emptyUpgrades } from '../systems/shop';
+import { emptyCardMods } from '../roguelike/modifiers';
 import { generateWorld } from '../world/world';
 import type { Ant, AntClass, Enemy, Prop, ResourceNode, Toast, WaveState } from '../core/types';
 import { stepSimulation, makeBoss, makeWaveEnemy, type SimHost } from './update';
@@ -19,6 +20,7 @@ class MockHost implements SimHost {
   rng = new Rng(42);
   events = new EventBus();
   mods = modsFrom(emptyUpgrades());
+  cardMods = emptyCardMods();
   buffs = { collectSpeedMult: 1, attackCdMult: 1 };
   wallet: Record<ResourceKind, number> = { leaf: 0, mushroom: 0, cactus: 0, banana: 0, flower: 0, crystal: 0 };
   mapId: MapId = 'campo';
@@ -91,6 +93,9 @@ class MockHost implements SimHost {
   playSfx(): void { /* mock */ }
   damageAnt(): void { /* teste não usa */ }
   damageNest(dmg: number): void { this.nestHp = Math.max(0, this.nestHp - dmg); }
+  nestHpMax(): number { return 400; }
+  grantResource(kind: ResourceKind, n: number): void { this.wallet[kind] += n; }
+  addXp(n: number): void { this.xp += n; }
   spawnAnt(cls: AntClass): void {
     this.ownedAnts[cls] += 1;
     this.ants.push(createAnt(cls, this.nest.x + 30, this.nest.y, () => this.rng.next()));
@@ -117,7 +122,7 @@ class MockHost implements SimHost {
   spawnWaveEnemy(power?: number): void { this.enemies.push(makeWaveEnemy(this, power)); }
   spawnBoss(): void { this.enemies.push(makeBoss(this)); }
   pushToast(text: string, kind: Toast['kind']): void { this.toasts.push({ id: 1, text, kind, tSec: 5 }); }
-  onLevelUp(level: number): void { this.levelUps.push(level); }
+  onLevelUp(level: number, gained: number): void { this.levelUps.push(level, gained); }
   onQueenDead(): void { this.gameOver = true; }
   onBossDefeated(e: Enemy): void { this.bossKills.push(e.kind); }
   onMapUnlocked(mapId: MapId): void { this.unlocked.push(mapId); }

@@ -7,6 +7,8 @@ import { describe, expect, it, beforeAll } from 'vitest';
 import { GameEngine } from './GameEngine';
 import { stepSimulation } from './update';
 import { WAVES } from '../core/constants';
+import { cardModsFrom } from '../roguelike/modifiers';
+import type { CartaPainel } from '../roguelike/cardPool';
 
 // localStorage não existe no node — stub para testar save/continue
 const store = new Map<string, string>();
@@ -153,5 +155,111 @@ describe('integração: mecânicas principais', () => {
     e.backToMenu();
     expect(e.continueGame()).toBe(true);
     expect({ ants: e.ants.length, xp: e.xp, level: e.level, wave: e.wave.num }).toEqual(snap);
+  });
+});
+
+describe('integração: baralho roguelike 5A (doc 03)', () => {
+  it('level-up abre painel de 3 cartas e CONGELA o mundo', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.clock.paused = false;
+    e.addXp(60); // nível 2 (precisa 50)
+    stepSimulation(e as never, 1 / 60);
+    expect(e.level).toBe(2);
+    expect(e.cardPanel).not.toBeNull();
+    expect(e.cardPanel!.choices).toHaveLength(3);
+    expect(e.clock.paused).toBe(true);
+    // painel refletido no HUD
+    const hud = e.store.getSnapshot();
+    expect(hud.cardPanel).not.toBeNull();
+    expect(hud.cardPanel!.level).toBe(2);
+  });
+
+  it('escolher carta aplica o efeito, fecha o painel e descongela', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.addXp(60);
+    stepSimulation(e as never, 1 / 60);
+    const escolha = e.cardPanel!.choices.find((c) => c.tipo === 'carta')!;
+    e.chooseCard(escolha.id);
+    expect(e.cards[escolha.id]).toBe(1);
+    expect(e.cardPanel).toBeNull();
+    expect(e.clock.paused).toBe(false);
+    // modificadores saíram do neutro
+    expect(JSON.stringify(e.cardMods)).not.toBe(JSON.stringify(cardModsFrom({})));
+  });
+
+  it('Paredes grossas: sobe HP máximo e cura o ninho no mesmo valor', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.nestHp = 100;
+    e.addXp(60);
+    stepSimulation(e as never, 1 / 60);
+    e.cardPanel!.choices = [{
+      tipo: 'carta', id: 'paredes_grossas', nome: 'Paredes grossas', icone: '🧱',
+      raridade: 'comum', desc: '+40 HP do ninho', nivelAtual: 0, nivelMax: 3,
+      eixo: 'muralha', eixoNome: 'Muralha', sinergia: false,
+    } as CartaPainel];
+    e.chooseCard('paredes_grossas');
+    expect(e.nestHpMax()).toBe(440); // 400 + 40
+    expect(Math.round(e.nestHp)).toBe(140); // 100 + 40 de cura (+ regen do passo)
+  });
+
+  it('Rainha eterna: revive 1× com metade da fome, sem game over', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.cards = { rainha_eterna: 1 };
+    e.cardMods = cardModsFrom(e.cards);
+    e.queen.hunger = 0;
+    stepSimulation(e as never, 1 / 60);
+    expect(e.queen.dead).toBe(false);
+    expect(e.gameOver).toBe(false);
+    expect(e.queen.hunger).toBe(50);
+    // segunda morte é definitiva
+    e.queen.hunger = 0;
+    stepSimulation(e as never, 1 / 60);
+    expect(e.queen.dead).toBe(true);
+    expect(e.gameOver).toBe(true);
+  });
+
+  it('Despensa: teto de 200 por recurso, +65% no nível 3', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.grantResource('leaf', 1000);
+    expect(e.wallet.leaf).toBe(200);
+    e.cards = { despensa: 3 };
+    e.cardMods = cardModsFrom(e.cards);
+    e.grantResource('leaf', 1000);
+    expect(e.wallet.leaf).toBe(330);
+  });
+
+  it('teto de população: loja bloqueia além de 60 (+ Ninhada maior)', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.wallet.leaf = 5000;
+    let compras = 0;
+    for (let i = 0; i < 20; i++) {
+      if (e.buyUpgrade('antlimit')) compras++;
+    }
+    // 3 iniciais + 5×11 = 58 ≤ 60; a 12ª compra (63) é bloqueada
+    expect(compras).toBe(11);
+    expect(e.populationMax()).toBe(60);
+    e.cards = { ninhada_maior: 3 };
+    e.cardMods = cardModsFrom(e.cards);
+    expect(e.populationMax()).toBe(64);
+    expect(e.buyUpgrade('antlimit')).toBe(true); // 63 ≤ 64
+  });
+
+  it('cartas persistem no save e o painel pendente reabre', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.cards = { mochila: 2, couraca: 1 };
+    e.cardMods = cardModsFrom(e.cards);
+    e.pendingCardPanels = 1;
+    e.backToMenu();
+    expect(e.continueGame()).toBe(true);
+    expect(e.cards).toEqual({ mochila: 2, couraca: 1 });
+    expect(e.cardMods.workerCarryBonus).toBe(3);
+    expect(e.cardPanel).not.toBeNull(); // painel pendente reaberto
   });
 });

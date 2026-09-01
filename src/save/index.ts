@@ -8,6 +8,7 @@ import { SAVE, type AntClass, type EnemyKind, type MapId, type ResourceKind } fr
 import type { AntState, Resources, UpgradeLevels, WaveState } from '../core/types';
 import { FogOfWar } from '../engine/fogOfWar';
 import { modsFrom, emptyUpgrades } from '../systems/shop';
+import { cardModsFrom } from '../roguelike/modifiers';
 import { resumeAntIds } from '../entities/ants';
 import { resumeEnemyIds } from '../entities/enemies';
 import { generateWorld } from '../world/world';
@@ -40,7 +41,7 @@ export interface RunSaveV2 {
   unlockedMaps: MapId[];
   wavesByMap: Partial<Record<MapId, number>>;
   totals: { delivered: number; enemiesKilled: number; bossesKilled: number };
-  queen: { hunger: number; dead: boolean; feedT: number; warn30: boolean; warn10: boolean };
+  queen: { hunger: number; hungerMax?: number; dead: boolean; feedT: number; warn30: boolean; warn10: boolean };
   nestHp: number;
   wave: WaveState;
   ants: SavedAnt[];
@@ -59,6 +60,11 @@ export interface RunSaveV2 {
   rebirths?: number;
   ownedAnts?: Record<AntClass, number>;
   respawnQueue?: Array<{ cls: AntClass; t: number }>;
+
+  // v3 (baralho roguelike 5A — opcionais, retrocompatíveis)
+  cards?: Record<string, number>;
+  pendingCardPanels?: number;
+  queenReviveUsed?: boolean;
 }
 
 export type RunSaveV3 = RunSaveV2 & Required<Pick<RunSaveV2, 'version'>>;
@@ -152,6 +158,9 @@ export function serialize(engine: GameEngine): RunSaveV2 {
     rebirths: engine.rebirths,
     ownedAnts: { ...engine.ownedAnts },
     respawnQueue: engine.respawnQueue.map((q) => ({ cls: q.cls, t: q.t })),
+    cards: { ...engine.cards },
+    pendingCardPanels: engine.pendingCardPanels,
+    queenReviveUsed: engine.queenReviveUsed,
   };
 }
 
@@ -204,7 +213,16 @@ export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
   engine.rebirths = save.rebirths ?? 0;
   engine.ownedAnts = { ...(save.ownedAnts ?? { worker: 0, soldier: 0, scout: 0 }) };
   engine.respawnQueue = (save.respawnQueue ?? []).map((q) => ({ cls: q.cls, t: q.t }));
-  engine.queen = { ...save.queen };
+  // baralho roguelike 5A: restaura e recalcula os modificadores
+  engine.cards = { ...(save.cards ?? {}) };
+  engine.cardMods = cardModsFrom(engine.cards);
+  engine.pendingCardPanels = save.pendingCardPanels ?? 0;
+  engine.queenReviveUsed = save.queenReviveUsed ?? false;
+  engine.cardPanel = null;
+  engine.queen = {
+    ...save.queen,
+    hungerMax: save.queen.hungerMax ?? Math.round(100 * engine.cardMods.hungerMaxMult),
+  };
   engine.nestHp = save.nestHp;
   engine.wave = { ...save.wave };
   engine.timeSec = save.timeSec;

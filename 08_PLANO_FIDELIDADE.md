@@ -265,3 +265,64 @@ principais estavam quebradas. Causas-raiz encontradas comparando com o bundle:
 - 3 seeds × 600s com compras automáticas: 49–59 formigas, nível 16–17,
   ondas 1–5 repelidas, ninho cheio, rainha viva.
 - `tsc --noEmit` limpo · **72/72 testes** (11 novos de integração) · build ok.
+
+## Apêndice F — Fase 5A: baralho roguelike de 20 cartas (01/09/2026) ✅
+
+Implementa o design do doc `03_BARALHO_ROGUELIKE.md` (Parte 6 do dossiê) com as
+20 cartas que provam TODOS os mecanismos do sistema. Código novo em `src/roguelike/`.
+
+### Arquivos novos
+- `roguelike/cards.ts` — catálogo declarativo das 20 cartas (interface CardDef),
+  raridades (cor/peso), 7 eixos, slots 3/3/2. Efeito NÃO vive aqui.
+- `roguelike/modifiers.ts` — ÚNICO lugar que traduz carta em efeito
+  (`cardModsFrom(cards) → CardMods`, ~20 campos).
+- `roguelike/cardPool.ts` — sorteio do painel: peso de raridade por nível
+  (comum max(60−2,2n,20), incomum 25+0,5n, rara 10+0,9n, épica 4+0,6n,
+  lendária 1+0,2n), sinergia +15%/carta do eixo (teto +60%), teto de slots,
+  trava anti-vazio com fallbacks (cura 25% / +30 folhas / +100 XP).
+- `roguelike/cards.test.ts` — 24 testes (catálogo, pesos, sinergia, slots, mods).
+- `ui/CardPanel.tsx` + `cardPanel.module.css` — modal de level-up: moldura
+  colorida por raridade, pips de nível, brilho dourado pulsante em carta
+  sinérgica, teclas 1–3, responsivo (coluna no celular).
+
+### As 20 cartas (valorPorNivel = TOTAL por nível, ganho marginal decrescente)
+- **Ninho (6)**: Paredes grossas ⚪ +40/70/95 HP (cura o delta ao subir) ·
+  Terra batida ⚪ +2/3/4 armadura flat (dano mín. 1) · Reparo rápido 🟢
+  +50/85/115% (regen E reparo) · Despensa 🟢 +30/50/65% armazenamento
+  (teto base 200/recurso, toast ao desperdiçar) · Espinhos de raiz 🔵
+  reflete 30/50% do dano ao atacante ≤160px · Fortaleza viva 🟣 +3/5 HP/s
+  fora de combate.
+- **Colônia (4)**: Passo firme ⚪ +8/14/19% vel todas · Ninhada maior 🟢
+  +2/3/4 pop máx (teto 60 [P], loja bloqueia) · Divisão de trabalho 🟢
+  +10/17/23% (vel + dano + XP) · Feromônio de comando 🔵 +25/40%
+  (anel de comando 14–48px ÷ mult → formigas mais juntas).
+- **Rainha (4)**: Apetite contido ⚪ −12/20/27% dreno · Estômago amplo ⚪
+  +25/42/57% fome máx (avisos/alimentação escalam por %) · Porção reforçada
+  🟢 +2/3/4 por item · Rainha eterna 🟡 revive 1× com 50% fome/ninho.
+- **Coletora (3)**: Passo leve ⚪ +12/20/27% vel · Mochila ⚪ +2/3/4 carga ·
+  Faro apurado 🟢 +40/70/95px detecção.
+- **Soldado (3)**: Mandíbulas afiadas ⚪ +4/7/9 dano flat (fora do crítico) ·
+  Couraça ⚪ +15/26/35 HP (vivos ganham na hora) · Instinto de caça 🟢
+  +50/85/115px agressão.
+
+### Integração no engine
+- `AntWorld.cardMods` + `SimHost.{addXp, grantResource, nestHpMax}`; XP de
+  TODAS as fontes passa por `addXp` (eficiência); recursos por `grantResource`
+  (teto Despensa); `nestHpMax()` inclui cartas; Rainha parametrizada
+  (`QueenState.hungerMax`, `updateQueen(opts)`); `Clock` congela DENTRO do
+  passo quando o painel abre.
+- Level-up (curva [O] 50+25(n−1) intacta) → `onLevelUp(level, gained)` →
+  painel de 3 cartas, `clock.paused = true`; level-ups em cascata empilham
+  (`pendingCardPanels`); `chooseCard()` aplica via modifiers + side-effects,
+  despausa e salva.
+- Save v3: campos opcionais `cards`, `pendingCardPanels`, `queenReviveUsed`,
+  `queen.hungerMax` — retrocompatível; painel pendente reabre no "continuar".
+- Renascimento/nova run zeram o baralho (cartas são por partida [doc 03 §1]).
+
+### Validação
+- `tsc --noEmit` limpo · **103/103 testes** (12 arquivos: +24 do baralho,
+  +7 de integração do painel) · `npm run build` ok.
+- Cobertura testada: painel abre e congela no level-up; escolha aplica e
+  despausa; Paredes grossas cura; Rainha eterna revive 1× e a 2ª é definitiva;
+  Despensa teto 200→330; população 60 com Ninhada maior liberando +4;
+  persistência de cartas + painel pendente no save.

@@ -440,6 +440,8 @@ export function nesthpCost(bought: number): Array<{ kind: ResourceKind; amount: 
 export const ECONOMY = {
   START_RESOURCES: {} as Partial<Record<ResourceKind, number>>, // [O] gs(): começa com 0
   LUCK_BONUS_CHANCE: 0.1, // [O] 10% × nível de sorte por item depositado
+  /** [P 5A] teto por recurso na carteira — Despensa aumenta */
+  WALLET_CAP_BASE: 200,
 } as const;
 
 export const SAVE = {

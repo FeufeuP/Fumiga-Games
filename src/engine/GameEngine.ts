@@ -28,6 +28,9 @@ import { createAnt, resetAntIds } from '../entities/ants';
 import { resetEnemyIds } from '../entities/enemies';
 import { createQueenState } from '../systems/queen';
 import { emptyUpgrades, modsFrom, upgradeById } from '../systems/shop';
+import { cardModsFrom, emptyCardMods, type CardMods } from '../roguelike/modifiers';
+import { drawPanel } from '../roguelike/cardPool';
+import { cardById } from '../roguelike/cards';
 import { Camera } from '../render/Camera';
 import { Renderer } from '../render/Renderer';
 import { loadSprites, type SpriteSet } from '../render/sprites';
@@ -72,6 +75,7 @@ function emptyHud(): HudState {
     achievements: { done: 0, total: 0, progress: [] },
     rebirths: 0,
     score: 0,
+    cardPanel: null,
   };
 }
 
@@ -123,6 +127,19 @@ export class GameEngine implements AntWorld, Scene {
   queen = createQueenState();
   nestHp: number = NEST.HP_MAX;
   wavesByMap: Partial<Record<MapId, number>> = {};
+
+  // ── baralho roguelike 5A (doc 03) ────────────────────────────────
+  /** cartas escolhidas nesta run: id → nível */
+  cards: Record<string, number> = {};
+  /** efeitos agregados — ÚNICO ponto de aplicação é modifiers.ts */
+  cardMods: CardMods = emptyCardMods();
+  /** painéis de level-up aguardando escolha (level-up em cascata) */
+  pendingCardPanels = 0;
+  /** painel aberto agora — congela o mundo (clock.paused) */
+  cardPanel: { level: number; choices: ReturnType<typeof drawPanel> } | null = null;
+  /** Rainha eterna: 1 revive por run */
+  queenReviveUsed = false;
+  private lastCapWasteToastT = -999;
 
   // ── ciclo A [O] ──────────────────────────────────────────────────
   ownedAnts: Record<AntClass, number> = { worker: 0, soldier: 0, scout: 0 };
@@ -181,17 +198,18 @@ export class GameEngine implements AntWorld, Scene {
     const xpPer = XP.PER_DEPOSIT + this.mods.xpBoost;
     for (let i = 0; i < units; i++) {
       this.wallet[kind] += 1;
-      this.xp += xpPer;
+      this.addXp(xpPer);
       // [O] sorte: 10% × nível → recurso extra
       if (this.rng.chance(ECONOMY.LUCK_BONUS_CHANCE * this.mods.luck)) {
         this.wallet[kind] += 1;
-        this.xp += 1;
+        this.addXp(1);
       }
     }
     this.totals.delivered += units;
     this.totals.byResource[kind] = (this.totals.byResource[kind] ?? 0) + units;
     this.progressResource(kind, units);
     this.checkAchievements();
+    this.clampWallet();
     this.audio.play('deposit');
     this.events.emit('food_deposited', { units, food: units * RESOURCES[kind].food, by });
   }
@@ -250,7 +268,7 @@ export class GameEngine implements AntWorld, Scene {
     }
     if (e.hp <= 0 && !e.boss) {
       // chefe é contabilizado em onBossDefeated (drops + XP)
-      this.xp += e.xp;
+      this.addXp(e.xp);
       this.totals.enemiesKilled++;
       this.totals.byEnemy[e.kind] = (this.totals.byEnemy[e.kind] ?? 0) + 1;
       this.audio.play('kill');
@@ -285,9 +303,24 @@ export class GameEngine implements AntWorld, Scene {
 
   damageNest(dmg: number, _fromX?: number, _fromY?: number): void {
     if (this.nestHp <= 0) return; // já colapsado [O]
+    // Terra batida (carta 5A): armadura flat, dano mínimo 1
+    if (this.cardMods.nestArmor > 0 && dmg > 0) {
+      dmg = Math.max(1, dmg - this.cardMods.nestArmor);
+    }
     const before = this.nestHp;
     this.nestHp = Math.max(0, this.nestHp - dmg);
     this.shake = Math.max(this.shake, 0.7);
+    // Espinhos de raiz (carta 5A): devolve parte do dano ao atacante próximo
+    if (this.cardMods.nestThornsPct > 0 && _fromX !== undefined && _fromY !== undefined) {
+      let attacker: Enemy | null = null;
+      let bestD = 160;
+      for (const e of this.enemies) {
+        if (e.hp <= 0) continue;
+        const d = Math.hypot(e.x - _fromX, e.y - _fromY);
+        if (d < bestD) { bestD = d; attacker = e; }
+      }
+      if (attacker) this.damageEnemy(attacker, (dmg * this.cardMods.nestThornsPct) / 100, 'soldier');
+    }
     if (before > 0 && this.nestHp <= 0) {
       // [O] colapso: perde 30% das folhas e a onda recomeça
       const lost = Math.floor((this.wallet.leaf ?? 0) * NEST_COLLAPSE.LEAF_LOSS_FRAC);
@@ -334,9 +367,50 @@ export class GameEngine implements AntWorld, Scene {
     );
   }
 
-  /** [O] qn + upgrades.nesthp × Er */
+  /** [O] qn + upgrades.nesthp × Er (+ Paredes grossas, carta 5A) */
   nestHpMax(): number {
-    return NEST.HP_MAX + (this.upgrades.nesthp ?? 0) * NEST.HP_PER_UPGRADE;
+    return NEST.HP_MAX + (this.upgrades.nesthp ?? 0) * NEST.HP_PER_UPGRADE + this.cardMods.nestHpBonus;
+  }
+
+  /** [P 5A] população máxima: teto de segurança + Ninhada maior */
+  populationMax(): number {
+    return POPULATION.MAX + this.cardMods.populationMaxBonus;
+  }
+
+  /** [P 5A] Despensa: teto por recurso da carteira */
+  walletCap(): number {
+    return Math.round(ECONOMY.WALLET_CAP_BASE * this.cardMods.storageMult);
+  }
+
+  /** Concede recursos respeitando o teto da Despensa (avisa o desperdício). */
+  grantResource(kind: ResourceKind, n: number): void {
+    this.wallet[kind] = (this.wallet[kind] ?? 0) + n;
+    this.clampWallet();
+  }
+
+  /** Corta a carteira no teto da Despensa (carta 5A). */
+  private clampWallet(): void {
+    const cap = this.walletCap();
+    let waste = 0;
+    for (const kind of Object.keys(this.wallet) as ResourceKind[]) {
+      const v = this.wallet[kind] ?? 0;
+      if (v > cap) {
+        waste += v - cap;
+        this.wallet[kind] = cap;
+      }
+    }
+    if (waste > 0 && this.timeSec - this.lastCapWasteToastT > 10) {
+      this.lastCapWasteToastT = this.timeSec;
+      this.pushToast(
+        `🎒 Despensa cheia! ${Math.round(waste)} recursos desperdiçados (melhore o armazenamento).`,
+        'warn',
+      );
+    }
+  }
+
+  /** Adiciona XP com o bônus de eficiência (Divisão de trabalho, carta 5A). */
+  addXp(n: number): void {
+    this.xp += n * (1 + this.cardMods.efficiencyPct / 100);
   }
 
   private scoutSpawnI = 0;
@@ -347,9 +421,10 @@ export class GameEngine implements AntWorld, Scene {
     const x = Math.min(this.w - 12, Math.max(12, this.nest.x + Math.cos(ang) * dist));
     const y = Math.min(this.h - 12, Math.max(12, this.nest.y + Math.sin(ang) * dist));
     const ant = createAnt(cls, x, y, () => this.rng.next());
-    // [O] hp = pb × (1 + 0.15·hpboost + 0.01·At(r).hpPct)
+    // [O] hp = pb × (1 + 0.15·hpboost + 0.01·At(r).hpPct) (+ Couraça, carta 5A)
     const hpPct = this.mods.hpMult;
-    ant.hp = ant.hpMax = Math.round(ANTS[cls].hp * hpPct);
+    ant.hp = ant.hpMax = Math.round(ANTS[cls].hp * hpPct) +
+      (cls === 'soldier' ? this.cardMods.soldierHpBonus : 0);
     ant.angle = ant.wanderAngle = ang;
     if (cls === 'scout') {
       // [O] exploradoras cobrem ângulos diferentes do anel de fronteira
@@ -438,13 +513,109 @@ export class GameEngine implements AntWorld, Scene {
     if (this.toasts.length > 3) this.toasts.shift();
   }
 
-  onLevelUp(level: number): void {
+  onLevelUp(level: number, gained = 1): void {
     this.audio.play('levelUp');
     this.pushToast(`⭐ A colônia alcançou o nível ${level}!`, 'success');
+    // [doc 03 §6.3] painel de cartas congela o mundo e espera a escolha
+    this.pendingCardPanels += gained;
+    this.openCardPanelIfNeeded();
+  }
+
+  /** Abre (ou mantém aberto) o próximo painel de level-up pendente. */
+  private openCardPanelIfNeeded(): void {
+    if (!this.runActive || this.gameOver || this.cardPanel) return;
+    if (this.pendingCardPanels <= 0) return;
+    const choices = drawPanel(this.cards, this.level);
+    this.cardPanel = { level: this.level, choices };
+    this.clock.paused = true; // congela o mundo [doc 03 §6.3]
+    this.publishHud();
+  }
+
+  /** Escolhe uma carta/fallback do painel aberto e aplica o efeito. */
+  chooseCard(id: string): void {
+    if (!this.cardPanel || !this.runActive || this.gameOver) return;
+    const choice = this.cardPanel.choices.find((c) => c.id === id);
+    if (!choice) return;
+
+    if (choice.tipo === 'carta') {
+      const def = cardById(choice.id);
+      if (!def) return;
+      const atual = this.cards[choice.id] ?? 0;
+      if (atual >= def.valores.length) return;
+      const prevNestMax = this.nestHpMax();
+      const prevSoldierHp = this.cardMods.soldierHpBonus;
+      this.cards[choice.id] = atual + 1;
+      this.cardMods = cardModsFrom(this.cards);
+      this.applyCardSideEffects(choice.id, prevNestMax, prevSoldierHp);
+      this.audio.play('win');
+      this.pushToast(`🃏 ${def.nome} — nível ${atual + 1}!`, 'success');
+    } else if (choice.id === 'fallback_cura') {
+      const max = this.nestHpMax();
+      const heal = Math.round(max * 0.25);
+      this.nestHp = Math.min(max, this.nestHp + heal);
+      this.audio.play('win');
+      this.pushToast(`🏠 O ninho recuperou ${Math.round(this.nestHp)} de vida.`, 'success');
+    } else if (choice.id === 'fallback_comida') {
+      this.grantResource('leaf', 30);
+      this.audio.play('deposit');
+      this.pushToast('🍂 +30 folhas no estoque.', 'success');
+    } else if (choice.id === 'fallback_xp') {
+      this.addXp(100);
+      this.audio.play('levelUp');
+      this.pushToast('📘 +100 XP!', 'success');
+    }
+
+    this.pendingCardPanels = Math.max(0, this.pendingCardPanels - 1);
+    if (this.pendingCardPanels > 0) {
+      // level-ups em cascata: próximo painel já abre
+      this.cardPanel = null;
+      this.openCardPanelIfNeeded();
+    } else {
+      this.cardPanel = null;
+      this.clock.paused = false;
+    }
+    this.publishHud();
+    writeSave(serialize(this));
+  }
+
+  /** Efeitos imediatos ao subir de nível uma carta (vida extra, etc.). */
+  private applyCardSideEffects(id: string, prevNestMax: number, prevSoldierHp: number): void {
+    if (id === 'paredes_grossas') {
+      // o ganho de HP máximo também cura o ninho no mesmo valor
+      const delta = this.nestHpMax() - prevNestMax;
+      this.nestHp = Math.min(this.nestHpMax(), this.nestHp + delta);
+      this.nest.hpMax = this.nestHpMax();
+    }
+    if (id === 'couraca') {
+      // soldados vivos ganham a vida extra imediatamente
+      const delta = this.cardMods.soldierHpBonus - prevSoldierHp;
+      if (delta > 0) {
+        for (const a of this.ants) {
+          if (a.cls === 'soldier' && a.hp > 0) {
+            a.hp += delta;
+            a.hpMax += delta;
+          }
+        }
+      }
+    }
+    if (id === 'estomago_amplo') {
+      this.queen.hungerMax = Math.round(100 * this.cardMods.hungerMaxMult);
+    }
   }
 
   onQueenDead(): void {
     if (this.gameOver) return;
+    // Rainha eterna (carta 5A): revive 1× com 50% de fome e ninho
+    if (this.cardMods.queenRevive && !this.queenReviveUsed) {
+      this.queenReviveUsed = true;
+      this.queen.dead = false;
+      this.queen.hunger = Math.round(this.queen.hungerMax * 0.5);
+      this.nestHp = Math.max(this.nestHp, Math.round(this.nestHpMax() * 0.5));
+      this.audio.play('win');
+      this.pushToast('👑 A Rainha Eterna renasce das cinzas!', 'success');
+      this.publishHud();
+      return;
+    }
     this.gameOver = true;
     this.clock.paused = true;
     this.audio.play('kill');
@@ -456,9 +627,9 @@ export class GameEngine implements AntWorld, Scene {
   onBossDefeated(e: Enemy): void {
     const cfg = MAPS[this.mapId].boss;
     for (const [kind, n] of Object.entries(cfg.drops)) {
-      this.wallet[kind as ResourceKind] += n ?? 0;
+      this.grantResource(kind as ResourceKind, n ?? 0);
     }
-    this.xp += e.xp;
+    this.addXp(e.xp);
     this.totals.bossesKilled++;
     this.progressBoss();
     this.checkAchievements();
@@ -547,7 +718,7 @@ export class GameEngine implements AntWorld, Scene {
     // [O] o original NÃO tem fauna ambiente: inimigos só vêm das ondas
     this.resources = [];
     this.enemies = [];
-    this.nest = { x: world.nestX, y: world.nestY, hp: this.nestHp, hpMax: NEST.HP_MAX };
+    this.nest = { x: world.nestX, y: world.nestY, hp: this.nestHp, hpMax: this.nestHpMax() };
     this.fog = new FogOfWar(world.w, world.h);
     this.camera.setWorldSize(world.w, world.h);
     // [O] maxRes: teto de nós por tipo para a regeneração
@@ -626,6 +797,13 @@ export class GameEngine implements AntWorld, Scene {
     }
     this.upgrades = emptyUpgrades();
     this.mods = modsFrom(this.upgrades, this.rebirths);
+    // [doc 03 §1] cartas são POR PARTIDA: zeram a cada run/renascimento
+    this.cards = {};
+    this.cardMods = emptyCardMods();
+    this.pendingCardPanels = 0;
+    this.cardPanel = null;
+    this.queenReviveUsed = false;
+    this.lastCapWasteToastT = -999;
     // [O] totais e conquistas são CUMULATIVOS (persistem entre runs);
     // missões reiniciam a cada run/renascimento
     this.unlockedMaps = ['campo'];
@@ -670,6 +848,8 @@ export class GameEngine implements AntWorld, Scene {
     if (!applySave(this, save)) return false;
     this.runActive = true;
     this.clock.paused = this.gameOver;
+    // painel que ficou pendente ao sair do jogo volta aberto
+    this.openCardPanelIfNeeded();
     this.recomputeFogActive();
     this.store.publish({ ...this.store.getSnapshot(), screen: 'game' });
     this.publishHud();
@@ -679,6 +859,7 @@ export class GameEngine implements AntWorld, Scene {
   backToMenu(): void {
     if (this.runActive) writeSave(serialize(this));
     this.runActive = false;
+    this.cardPanel = null; // painel volta a abrir no "continuar" (pendente no save)
     this.clock.paused = true;
     this.store.publish({ ...this.store.getSnapshot(), screen: 'menu' });
     this.publishHud();
@@ -695,6 +876,15 @@ export class GameEngine implements AntWorld, Scene {
     if (!def || !this.runActive || this.gameOver) return false;
     const bought = this.upgrades[id] ?? 0;
     if (bought >= def.max) return false;
+
+    // [P 5A] teto de população: Ninhada maior (carta) aumenta o limite
+    if (id === 'antlimit' || id === 'soldier' || id === 'scout') {
+      const total = this.ownedAnts.worker + this.ownedAnts.soldier + this.ownedAnts.scout;
+      if (total + 5 > this.populationMax()) {
+        this.pushToast('🐜 População máxima! (carta Ninhada maior aumenta o teto)', 'warn');
+        return false;
+      }
+    }
 
     // [O] nesthp custa VÁRIOS recursos (ob(l)); os demais, um só
     if (def.multiCost) {
@@ -920,7 +1110,7 @@ export class GameEngine implements AntWorld, Scene {
 
   private completeMission(m: (typeof MISSIONS)[number]): void {
     this.missionsDone.push(m.id);
-    this.xp += m.rewardXp;
+    this.addXp(m.rewardXp);
     this.audio.play('win');
     this.pushToast(`📜 Missão concluída: ${m.title}! +${m.rewardXp} XP`, 'success');
   }
@@ -933,7 +1123,7 @@ export class GameEngine implements AntWorld, Scene {
       if (trackValue(a.track, totals) < a.goal) continue;
       this.achievementsDone.push(a.id);
       for (const [kind, n] of Object.entries(a.rewardResources)) {
-        this.wallet[kind as ResourceKind] += n ?? 0;
+        this.grantResource(kind as ResourceKind, n ?? 0);
       }
       for (const [cls, n] of Object.entries(a.rewardAnts)) {
         for (let i = 0; i < (n ?? 0); i++) {
@@ -941,7 +1131,7 @@ export class GameEngine implements AntWorld, Scene {
           this.spawnAnt(cls as AntClass);
         }
       }
-      this.xp += a.rewardXp;
+      this.addXp(a.rewardXp);
       this.audio.play('win');
       this.pushToast(`🏆 Conquista: ${a.title}! +${a.rewardXp} XP`, 'success');
     }
@@ -952,7 +1142,7 @@ export class GameEngine implements AntWorld, Scene {
     if (!this.runActive || this.gameOver || this.wave.active) return false;
     const kind = MAPS[this.mapId].resource;
     const n = 3 + this.wave.num + 1;
-    this.wallet[kind] = (this.wallet[kind] ?? 0) + n;
+    this.grantResource(kind, n);
     this.wave.tSec = 0;
     this.audio.play('click');
     this.pushToast(`Onda adiantada! +${n} ${RESOURCES[kind].name}.`, 'success');
@@ -969,7 +1159,7 @@ export class GameEngine implements AntWorld, Scene {
     const cy = Math.min(this.h - 30, Math.max(30, y));
     for (const a of this.ants) {
       if (a.cls !== 'scout' || a.z > 0) continue;
-      const p = 14 + this.rng.next() * 34;
+      const p = (14 + this.rng.next() * 34) / this.cardMods.commandRangeMult;
       const ang = this.rng.next() * Math.PI * 2;
       a.tx = cx + Math.cos(ang) * p;
       a.ty = cy + Math.sin(ang) * p;
@@ -988,7 +1178,7 @@ export class GameEngine implements AntWorld, Scene {
     const cy = Math.min(this.h - 30, Math.max(30, y));
     for (const a of this.ants) {
       if (a.cls !== 'soldier' || a.z > 0) continue;
-      const p = 14 + this.rng.next() * 34;
+      const p = (14 + this.rng.next() * 34) / this.cardMods.commandRangeMult;
       const ang = this.rng.next() * Math.PI * 2;
       a.tx = cx + Math.cos(ang) * p;
       a.ty = cy + Math.sin(ang) * p;
@@ -1082,7 +1272,7 @@ export class GameEngine implements AntWorld, Scene {
       xp: this.xp,
       xpToNext: 50 + 25 * (this.level - 1),
       queenHunger: this.queen.hunger,
-      queenHungerMax: 100,
+      queenHungerMax: this.queen.hungerMax,
       nestHp: this.nestHp,
       nestHpMax: this.nestHpMax(),
       ants: antsCount,
@@ -1125,6 +1315,7 @@ export class GameEngine implements AntWorld, Scene {
       },
       rebirths: this.rebirths,
       score: this.score,
+      cardPanel: this.cardPanel ? { level: this.cardPanel.level, choices: [...this.cardPanel.choices] } : null,
     });
   }
 }

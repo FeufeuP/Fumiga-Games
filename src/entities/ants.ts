@@ -73,6 +73,10 @@ export function revealRadiusOf(cls: AntClass): number {
 export function antSpeed(a: Ant, w: AntWorld): number {
   // [O] base 82 (scout ×1.35) · upgrade speed +10%/nível · carregando ×0.9
   let v = ANTS[a.cls].speed * w.mods.speedMult;
+  // cartas 5A: Passo firme (todas) + Divisão de trabalho + Passo leve (coletora)
+  const pct = w.cardMods.speedPct + w.cardMods.efficiencyPct +
+    (a.cls === 'worker' ? w.cardMods.workerSpeedPct : 0);
+  if (pct !== 0) v *= 1 + pct / 100;
   if (a.carrying > 0) v *= ANT_SPRITE.CARRY_SLOWDOWN;
   // [O] rally COLETA!: operárias ×1.6 por 8s
   if (a.cls === 'worker' && w.buffs.collectSpeedMult !== 1) {
@@ -82,9 +86,12 @@ export function antSpeed(a: Ant, w: AntWorld): number {
 }
 
 export function antDamage(a: Ant, w: AntWorld): { dmg: number; crit: boolean } {
-  const base = ANTS[a.cls].dmg * w.mods.dmgMult;
+  // Divisão de trabalho (carta 5A): +eficiência em dano
+  const base = ANTS[a.cls].dmg * w.mods.dmgMult * (1 + w.cardMods.efficiencyPct / 100);
   const crit = w.rng.chance(w.mods.critChance);
-  return { dmg: crit ? base * w.mods.critMult : base, crit };
+  // Mandíbulas afiadas (carta 5A): bônus FLAT de soldado, fora do crit
+  const flat = a.cls === 'soldier' ? w.cardMods.soldierDmgBonus : 0;
+  return { dmg: (crit ? base * w.mods.critMult : base) + flat, crit };
 }
 
 /** [O] distância ao corpo do inimigo (extensão descontada) */
@@ -136,8 +143,10 @@ function wanderRevealed(a: Ant, w: AntWorld, dt: number, ahead: number, turn: nu
 
 export function updateWorker(a: Ant, w: AntWorld, dt: number): void {
   const speed = antSpeed(a, w);
-  const detect = BEHAVIOR.WORKER_DETECT * w.mods.visionMult;
-  const cap = w.mods.carryCap;
+  // Faro apurado (carta 5A): +px de detecção
+  const detect = BEHAVIOR.WORKER_DETECT * w.mods.visionMult + w.cardMods.workerDetectBonus;
+  // Mochila (carta 5A): +capacidade de carga
+  const cap = w.mods.carryCap + w.cardMods.workerCarryBonus;
   a.attackCd = Math.max(0, a.attackCd - dt);
 
   // [O] carregando: pega mais se der, senão volta ao ninho
@@ -222,8 +231,8 @@ export function updateSoldier(a: Ant, w: AntWorld, dt: number): void {
   const speed = antSpeed(a, w);
   a.attackCd = Math.max(0, a.attackCd - dt);
 
-  // [O] engaja inimigo revelado dentro de X0×visão…
-  let foe = w.nearestVisibleEnemy(a.x, a.y, BEHAVIOR.SOLDIER_AGGRO * w.mods.visionMult);
+  // [O] engaja inimigo revelado dentro de X0×visão… (+ Instinto de caça, carta 5A)
+  let foe = w.nearestVisibleEnemy(a.x, a.y, BEHAVIOR.SOLDIER_AGGRO * w.mods.visionMult + w.cardMods.soldierAggroBonus);
   if (!foe) {
     // …ou defende o ninho: inimigo revelado a 340+extensão do ninho [O]
     let best = Infinity;

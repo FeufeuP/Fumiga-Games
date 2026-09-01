@@ -11,6 +11,7 @@ import Hud from './Hud';
 import ShopModal from './ShopModal';
 import MapsModal from './MapsModal';
 import CameraControls from './CameraControls';
+import CardPanel from './CardPanel';
 import styles from './game.module.css';
 
 interface Props {
@@ -44,7 +45,7 @@ export default function GameScreen({ engine, hud }: Props) {
       if (k === 'c') engine.centerCamera();
       if (k === 'f') engine.setCameraMode(hud.cameraMode === 'follow' ? 'free' : 'follow');
       if (k === 'n') engine.cycleAnt();
-      if (k === 'p' && modal === 'none' && !hud.gameOver) openPause();
+      if (k === 'p' && modal === 'none' && !hud.gameOver && !hud.cardPanel) openPause();
       if (k === 'l' && !hud.gameOver) setModal((m) => (m === 'shop' ? 'none' : 'shop'));
       if (k === 'm' && !hud.gameOver) setModal((m) => (m === 'maps' ? 'none' : 'maps'));
       if (k === 'escape') setModal('none');
@@ -131,6 +132,7 @@ export default function GameScreen({ engine, hud }: Props) {
         <PauseMenu engine={engine} hud={hud} onClose={() => { engine.clock.paused = false; setModal('none'); }} />
       )}
       {hud.gameOver && <GameOverOverlay engine={engine} hud={hud} />}
+      {!hud.gameOver && hud.cardPanel && <CardPanel engine={engine} hud={hud} />}
     </div>
   );
 }
