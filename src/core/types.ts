@@ -13,6 +13,28 @@ export type { AntClass, EnemyKind, MapId, ResourceKind, UpgradeDef };
 
 export interface Vec2 { x: number; y: number }
 
+/** ── efeitos visíveis no mundo (melhorias percebíveis) ───────────── */
+/** texto flutuante: dano, XP, recursos, cura */
+export interface WorldText {
+  x: number; y: number;
+  text: string;
+  color: string;      // rgb "r,g,b"
+  t: number;          // tempo restante (s)
+  tMax: number;
+}
+/** poeira atrás de formigas rápidas (trilha ∝ velocidade) */
+export interface Dust {
+  x: number; y: number;
+  t: number; tMax: number;
+}
+/** onda de buff: anel que sai do ninho ao comprar/evoluir */
+export interface BuffWave {
+  x: number; y: number;
+  r: number; maxR: number;
+  color: string;      // rgb "r,g,b"
+  t: number; tMax: number;
+}
+
 export type AntState =
   | 'idle' | 'gotoResource' | 'harvest' | 'returnNest'
   | 'explore' | 'patrol' | 'seekEnemy' | 'attack' | 'returnHome'
@@ -54,6 +76,9 @@ export interface Ant {
   scoutTx: number;        // exploradora: alvo atual
   scoutTy: number;
   scoutDecideT: number;   // exploradora: tempo até repensar alvo
+  /** brilho temporário (onda de buff) — undefined = sem brilho */
+  glowT?: number;
+  glowColor?: string;     // rgb "r,g,b"
 }
 
 export type EnemyState = 'wander' | 'chase' | 'attack';
@@ -149,6 +174,10 @@ export interface Scene {
   readonly shake: number;
   /** marcas de toque: comandos CHAMAR EXPLORADORAS/SOLDADOS [O] */
   readonly tapMarks: ReadonlyArray<{ x: number; y: number; t: number; color: string }>;
+  /** efeitos visíveis: textos flutuantes, poeira e ondas de buff */
+  readonly worldTexts: ReadonlyArray<WorldText>;
+  readonly dust: ReadonlyArray<Dust>;
+  readonly buffWaves: ReadonlyArray<BuffWave>;
 }
 
 /** Contrato entre motor e comportamentos (testável com mock). */
@@ -181,7 +210,7 @@ export interface AntWorld {
   enemyExtent(e: Enemy): number;
   /** [O pickup] remove o nó de recurso do mapa */
   removeResource(id: number): void;
-  damageEnemy(e: Enemy, dmg: number, by: AntClass): void;
+  damageEnemy(e: Enemy, dmg: number, by: AntClass, crit?: boolean): void;
   antCount(cls: AntClass): number;
   /** efeitos sonoros (motor de áudio) */
   playSfx(name: string): void;

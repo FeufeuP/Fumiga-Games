@@ -85,9 +85,12 @@ export class Renderer {
 
     this.drawGround(ctx, scene, view);
     this.drawSorted(ctx, scene, view);
+    this.drawDust(ctx, scene);
     this.drawSmashFx(ctx, scene);
     this.drawTapMarks(ctx, scene);
+    this.drawBuffWaves(ctx, scene);
     this.drawFog(ctx, scene, view);
+    this.drawWorldTexts(ctx, scene);
     this.drawClouds(ctx);
   }
 
@@ -104,6 +107,52 @@ export class Renderer {
       ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(${m.color}, ${(0.8 * (1 - k)).toFixed(3)})`;
       ctx.fill();
+    }
+  }
+
+  /** poeira das formigas rápidas — velocidade VISÍVEL */
+  private drawDust(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    for (const d of scene.dust) {
+      const k = d.t / d.tMax;
+      ctx.fillStyle = `rgba(196, 178, 148, ${(0.5 * k).toFixed(3)})`;
+      const sz = 2 + (1 - k) * 2;
+      ctx.fillRect(Math.round(d.x - sz / 2), Math.round(d.y - sz / 2), sz, sz);
+    }
+  }
+
+  /** onda de buff: anel colorido que sai do ninho ao comprar/evoluir */
+  private drawBuffWaves(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    for (const w of scene.buffWaves) {
+      const k = w.t / w.tMax;
+      ctx.strokeStyle = `rgba(${w.color}, ${(0.85 * k).toFixed(3)})`;
+      ctx.lineWidth = 2 + 4 * k;
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
+      ctx.stroke();
+      // faísca no centro
+      ctx.fillStyle = `rgba(${w.color}, ${(0.4 * k).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, 10 * k, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /** textos flutuantes: dano, XP, recursos, cura (world-space) */
+  private drawWorldTexts(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const t of scene.worldTexts) {
+      const k = t.t / t.tMax;              // 1 → 0
+      const sobe = (1 - k) * 26;           // flutua para cima
+      const alpha = Math.min(1, k * 2.2);  // some no fim
+      ctx.font = 'bold 13px "Courier New", monospace';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = `rgba(20,18,15, ${alpha.toFixed(3)})`;
+      ctx.fillStyle = `rgba(${t.color}, ${alpha.toFixed(3)})`;
+      const x = Math.round(t.x);
+      const y = Math.round(t.y - sobe);
+      ctx.strokeText(t.text, x, y);
+      ctx.fillText(t.text, x, y);
     }
   }
 
@@ -295,6 +344,18 @@ export class Renderer {
   private drawAntEntity(ctx: CanvasRenderingContext2D, a: Ant, selected: boolean): void {
     const s = this.sprites;
     if (!s) return;
+    // brilho de buff recente (compra na loja / carta) — melhoria VISÍVEL
+    if (a.glowT && a.glowT > 0 && a.glowColor) {
+      const k = Math.min(1, a.glowT / 2.5);
+      const r = 16 + 4 * Math.sin(a.glowT * 9);
+      const grad = ctx.createRadialGradient(a.x, a.y, 2, a.x, a.y, r);
+      grad.addColorStop(0, `rgba(${a.glowColor}, ${(0.55 * k).toFixed(3)})`);
+      grad.addColorStop(1, `rgba(${a.glowColor}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
     if (selected) {
       ctx.strokeStyle = '#fbd046';
       ctx.lineWidth = 2;

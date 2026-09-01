@@ -17,8 +17,8 @@ import { EventBus } from '../core/events';
 import { Store } from '../core/store';
 import { Clock } from '../core/clock';
 import type {
-  Ant, AntMods, AntWorld, CameraMode, Enemy, HudState, Prop, ResourceNode,
-  Resources, Scene, Toast, UpgradeLevels, WaveState,
+  Ant, AntMods, AntWorld, BuffWave, CameraMode, Dust, Enemy, HudState, Prop, ResourceNode,
+  Resources, Scene, Toast, UpgradeLevels, WaveState, WorldText, AntClass as AntClassT,
 } from '../core/types';
 import { SpatialHash } from './spatialHash';
 import { FogOfWar } from './fogOfWar';
@@ -40,6 +40,37 @@ import { loadSave, writeSave, saveExists, serialize, applySave } from '../save';
 function emptyResources(): Resources {
   return { leaf: 0, mushroom: 0, cactus: 0, banana: 0, flower: 0, crystal: 0 };
 }
+
+/** cores das ondas de buff por categoria da loja (rgb) */
+const COR_CATEGORIA: Record<string, string> = {
+  coleta: '107,221,112',
+  ataque: '240,101,92',
+  defesa: '99,181,220',
+  niveis: '251,208,70',
+};
+/** cor da onda por eixo de sinergia da carta */
+export const COR_EIXO: Record<string, string> = {
+  economia: '251,208,70',
+  muralha: '99,181,220',
+  agressao: '240,101,92',
+  enxame: '107,221,112',
+  exploracao: '182,122,217',
+  veneno: '151,200,90',
+  peso: '220,170,110',
+};
+/** classe da carta → formigas que brilham */
+const ALVO_CLASSE_CARTA: Record<string, 'worker' | 'soldier' | 'scout' | 'todas'> = {
+  coletora: 'worker',
+  operaria: 'worker',
+  soldado: 'soldier',
+  exploradora: 'scout',
+};
+/** upgrades de classe brilham só nas formigas daquela classe */
+const ALVO_UPGRADE: Record<string, 'worker' | 'soldier' | 'scout'> = {
+  antlimit: 'worker',
+  soldier: 'soldier',
+  scout: 'scout',
+};
 
 function emptyHud(): HudState {
   return {
@@ -157,6 +188,10 @@ export class GameEngine implements AntWorld, Scene {
   /** [O tapMarks] marcas do comando CHAMAR (toque/toque duplo) */
   tapMarks: Array<{ x: number; y: number; t: number; color: string }> = [];
   regenT = RESOURCE_REGEN.INTERVAL_SEC;
+  // ── efeitos visíveis no mundo (melhorias percebíveis) ────────────
+  worldTexts: WorldText[] = [];
+  dust: Dust[] = [];
+  buffWaves: BuffWave[] = [];
   nextResourceId = 100000;
   maxRes: Partial<Record<ResourceKind, number>> = {};
   missionsProgress: Record<string, number> = {};
@@ -207,6 +242,12 @@ export class GameEngine implements AntWorld, Scene {
     }
     this.totals.delivered += units;
     this.totals.byResource[kind] = (this.totals.byResource[kind] ?? 0) + units;
+    this.pushWorldText(
+      this.nest.x + (this.rng.next() - 0.5) * 40,
+      this.nest.y - 40,
+      `+${units} ${RESOURCES[kind].icon}`,
+      '140,200,120',
+    );
     this.progressResource(kind, units);
     this.checkAchievements();
     this.clampWallet();
@@ -256,8 +297,15 @@ export class GameEngine implements AntWorld, Scene {
     this.resources = this.resources.filter((r) => r.id !== id);
   }
 
-  damageEnemy(e: Enemy, dmg: number, _by: AntClass): void {
+  damageEnemy(e: Enemy, dmg: number, _by: AntClass, crit = false): void {
     e.hp -= dmg;
+    // dano visível: número flutuante no inimigo (crítico em dourado)
+    this.pushWorldText(
+      e.x + (this.rng.next() - 0.5) * 18,
+      e.y - e.scale * 0.55 - 6,
+      crit ? `-${Math.round(dmg)}!` : `-${Math.round(dmg)}`,
+      crit ? '251,208,70' : '245,230,200',
+    );
     if (e.boss && e.hp > 0) {
       // [O] bossAggroT=4 e o smash só começa após o 1º golpe
       this.bossAggroT = BOSS.AGGRO_SEC;
@@ -268,6 +316,7 @@ export class GameEngine implements AntWorld, Scene {
     }
     if (e.hp <= 0 && !e.boss) {
       // chefe é contabilizado em onBossDefeated (drops + XP)
+      this.pushWorldText(e.x, e.y - e.scale * 0.55 - 16, `+${e.xp} XP`, '107,221,112');
       this.addXp(e.xp);
       this.totals.enemiesKilled++;
       this.totals.byEnemy[e.kind] = (this.totals.byEnemy[e.kind] ?? 0) + 1;
@@ -424,7 +473,7 @@ export class GameEngine implements AntWorld, Scene {
     // [O] hp = pb × (1 + 0.15·hpboost + 0.01·At(r).hpPct) (+ Couraça, carta 5A)
     const hpPct = this.mods.hpMult;
     ant.hp = ant.hpMax = Math.round(ANTS[cls].hp * hpPct) +
-      (cls === 'soldier' ? this.cardMods.soldierHpBonus : 0);
+      (cls === 'soldier' ? this.cardMods.soldierHpBonus : cls === 'worker' ? this.cardMods.workerHpBonus : 0);
     ant.angle = ant.wanderAngle = ang;
     if (cls === 'scout') {
       // [O] exploradoras cobrem ângulos diferentes do anel de fronteira
@@ -513,6 +562,27 @@ export class GameEngine implements AntWorld, Scene {
     if (this.toasts.length > 3) this.toasts.shift();
   }
 
+  /** Texto flutuante no mundo (dano, XP, recursos) — melhoria VISÍVEL. */
+  pushWorldText(x: number, y: number, text: string, color: string, dur = 1.1): void {
+    this.worldTexts.push({ x, y, text, color, t: dur, tMax: dur });
+    if (this.worldTexts.length > 40) this.worldTexts.shift();
+  }
+
+  /**
+   * Onda de buff: anel colorido sai do ninho e as formigas-alvo brilham
+   * por 2,5s — mostra QUEM ganhou a melhoria.
+   */
+  pushBuffWave(color: string, alvo: 'todas' | AntClassT = 'todas'): void {
+    this.buffWaves.push({ x: this.nest.x, y: this.nest.y, r: 0, maxR: 360, color, t: 0.9, tMax: 0.9 });
+    for (const a of this.ants) {
+      if (alvo === 'todas' || a.cls === alvo) {
+        a.glowT = 2.5;
+        a.glowColor = color;
+      }
+    }
+    if (this.buffWaves.length > 6) this.buffWaves.shift();
+  }
+
   onLevelUp(level: number, gained = 1): void {
     this.audio.play('levelUp');
     this.pushToast(`⭐ A colônia alcançou o nível ${level}!`, 'success');
@@ -549,6 +619,8 @@ export class GameEngine implements AntWorld, Scene {
       this.applyCardSideEffects(choice.id, prevNestMax, prevSoldierHp);
       this.audio.play('win');
       this.pushToast(`🃏 ${def.nome} — nível ${atual + 1}!`, 'success');
+      // carta visível: onda na cor do eixo, formigas da classe brilham
+      this.pushBuffWave(COR_EIXO[def.eixo] ?? '251,208,70', ALVO_CLASSE_CARTA[def.classe] ?? 'todas');
     } else if (choice.id === 'fallback_cura') {
       const max = this.nestHpMax();
       const heal = Math.round(max * 0.25);
@@ -814,6 +886,9 @@ export class GameEngine implements AntWorld, Scene {
     this.missionsDone = [];
     this.respawnQueue = [];
     this.reviveEvents = [];
+    this.worldTexts = [];
+    this.dust = [];
+    this.buffWaves = [];
     this.rally = { attackBuffT: 0, collectBuffT: 0, attackCd: 0, collectCd: 0 };
     this.bossAggroT = 0;
     this.bossFirstHit = false;
@@ -920,6 +995,8 @@ export class GameEngine implements AntWorld, Scene {
 
     this.audio.play('click');
     this.pushToast(`${def.name} — nível ${bought + 1}!`, 'success');
+    // MELHORIA VISÍVEL: onda colorida sai do ninho e as formigas brilham
+    this.pushBuffWave(COR_CATEGORIA[def.category] ?? '251,208,70', ALVO_UPGRADE[def.id] ?? 'todas');
     this.publishHud();
     writeSave(serialize(this));
     return true;

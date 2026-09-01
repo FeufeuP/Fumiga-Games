@@ -141,3 +141,16 @@
   border: 1px solid var(--c-terra-clara);
   border-radius: 6px;
 }
+
+/* ── prévia concreta: agora → próximo (melhoria visível) ────────── */
+.itemPreview {
+  margin: 2px 0;
+  font-size: 11px;
+  color: #ffd98a;
+  opacity: 0.95;
+  letter-spacing: 0.03em;
+}
+
+.itemPreview strong {
+  color: #fff4dd;
+}

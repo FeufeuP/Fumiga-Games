@@ -12,6 +12,7 @@ import ShopModal from './ShopModal';
 import MapsModal from './MapsModal';
 import CameraControls from './CameraControls';
 import CardPanel from './CardPanel';
+import { colonyStats } from '../systems/shop';
 import styles from './game.module.css';
 
 interface Props {
@@ -138,17 +139,25 @@ export default function GameScreen({ engine, hud }: Props) {
 }
 
 function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState; onClose: () => void }) {
-  const [tab, setTab] = useState<'stats' | 'ach' | 'score' | null>(null);
+  const [tab, setTab] = useState<'stats' | 'colonia' | 'ach' | 'score' | null>(null);
+  const coloniaStats = colonyStats(hud.upgrades, hud.rebirths, engine.cardMods, {
+    population: hud.ants.worker + hud.ants.soldier + hud.ants.scout,
+    populationMax: engine.populationMax(),
+    nestHpMax: hud.nestHpMax,
+  });
   const close = () => { setModalExit(); };
   const setModalExit = () => { onClose(); engine.backToMenu(); };
+  const titulo = tab === 'stats' ? 'ESTATÍSTICAS' : tab === 'colonia' ? 'COLÔNIA (loja + cartas)'
+    : tab === 'ach' ? 'CONQUISTAS' : 'PLACAR';
   return (
     <div className={styles.pauseOverlay}>
       <div className={styles.pausePanel}>
-        <h2>{tab ? (tab === 'stats' ? 'ESTATÍSTICAS' : tab === 'ach' ? 'CONQUISTAS' : 'PLACAR') : 'PAUSADO'}</h2>
+        <h2>{tab ? titulo : 'PAUSADO'}</h2>
         {tab === null && (
           <div className={styles.pauseBtns}>
             <button className={styles.btnPrimary} onClick={onClose}>CONTINUAR</button>
             <button className={styles.btn} onClick={() => setTab('stats')}>ESTATÍSTICAS</button>
+            <button className={styles.btn} onClick={() => setTab('colonia')}>COLÔNIA</button>
             <button className={styles.btn} onClick={() => setTab('ach')}>CONQUISTAS</button>
             <button className={styles.btn} onClick={() => setTab('score')}>PLACAR</button>
             <button className={styles.btn} onClick={close}>SAIR PARA O MENU</button>
@@ -163,6 +172,13 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
             <span>Chefes derrotados: {hud.totals.bossesKilled}</span>
             <span>Missões concluídas: {hud.missions.done}/{hud.missions.total}</span>
             <span>Conquistas desbloqueadas: {hud.achievements.done}/{hud.achievements.total}</span>
+          </div>
+        )}
+        {tab === 'colonia' && (
+          <div className={styles.stats}>
+            {coloniaStats.map((st) => (
+              <span key={st.label}>{st.label}: <strong>{st.value}</strong></span>
+            ))}
           </div>
         )}
         {tab === 'ach' && (

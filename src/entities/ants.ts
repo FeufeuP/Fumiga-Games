@@ -86,9 +86,9 @@ export function antSpeed(a: Ant, w: AntWorld): number {
 }
 
 export function antDamage(a: Ant, w: AntWorld): { dmg: number; crit: boolean } {
-  // Divisão de trabalho (carta 5A): +eficiência em dano
+  // Divisão de trabalho (carta 5A) + Golpe preciso (5B: +crítico)
   const base = ANTS[a.cls].dmg * w.mods.dmgMult * (1 + w.cardMods.efficiencyPct / 100);
-  const crit = w.rng.chance(w.mods.critChance);
+  const crit = w.rng.chance(Math.min(0.9, w.mods.critChance + w.cardMods.critBonus));
   // Mandíbulas afiadas (carta 5A): bônus FLAT de soldado, fora do crit
   const flat = a.cls === 'soldier' ? w.cardMods.soldierDmgBonus : 0;
   return { dmg: (crit ? base * w.mods.critMult : base) + flat, crit };
@@ -217,7 +217,7 @@ function engage(a: Ant, w: AntWorld, e: Enemy, dt: number): void {
     a.dir = e.x >= a.x ? 1 : -1;
     if (a.attackCd <= 0) {
       const { dmg, crit } = antDamage(a, w);
-      w.damageEnemy(e, dmg, a.cls);
+      w.damageEnemy(e, dmg, a.cls, crit);
       w.playSfx('attack');
       if (crit) w.events.emit('toast', { text: 'Golpe crítico!', kind: 'info' });
       a.attackCd = (BEHAVIOR.ATTACK_COOLDOWN_SEC * w.buffs.attackCdMult) / w.mods.attackSpeedMult;

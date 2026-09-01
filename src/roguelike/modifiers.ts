@@ -30,9 +30,11 @@ export interface CardMods {
   workerSpeedPct: number;      // passo leve
   workerCarryBonus: number;    // mochila
   workerDetectBonus: number;   // faro apurado (px)
+  workerHpBonus: number;       // casca dura (5B)
 
   // Soldado
   soldierDmgBonus: number;     // mandíbulas afiadas
+  critBonus: number;           // golpe preciso (5B): +chance crítica
   soldierHpBonus: number;      // couraça
   soldierAggroBonus: number;   // instinto de caça (px)
 }
@@ -56,7 +58,9 @@ export function emptyCardMods(): CardMods {
     workerSpeedPct: 0,
     workerCarryBonus: 0,
     workerDetectBonus: 0,
+    workerHpBonus: 0,
     soldierDmgBonus: 0,
+    critBonus: 0,
     soldierHpBonus: 0,
     soldierAggroBonus: 0,
   };
@@ -113,6 +117,9 @@ function add(m: CardMods, id: string, nivel: number): void {
     case 'passo_leve':
       m.workerSpeedPct = total(m.workerSpeedPct, valor(id, nivel));
       break;
+    case 'casca_dura':
+      m.workerHpBonus = total(m.workerHpBonus, valor(id, nivel));
+      break;
     case 'mochila':
       m.workerCarryBonus = total(m.workerCarryBonus, valor(id, nivel));
       break;
@@ -122,6 +129,9 @@ function add(m: CardMods, id: string, nivel: number): void {
 
     case 'mandibulas_afiadas':
       m.soldierDmgBonus = total(m.soldierDmgBonus, valor(id, nivel));
+      break;
+    case 'golpe_preciso':
+      m.critBonus = total(m.critBonus, valor(id, nivel));
       break;
     case 'couraca':
       m.soldierHpBonus = total(m.soldierHpBonus, valor(id, nivel));

@@ -12,7 +12,8 @@ import { updateAnt } from '../entities/ants';
 import { createEnemy, createBoss, updateEnemy } from '../entities/enemies';
 import { updateQueen, nestRegen, nestRepair, type QueenState } from '../systems/queen';
 import { applySeparation, clampToWorld } from './movement';
-import type { Ant, AntClass, AntWorld, Enemy, Toast } from '../core/types';
+import { antSpeed } from '../entities/ants';
+import type { Ant, AntClass, AntWorld, BuffWave, Dust, Enemy, Toast, WorldText } from '../core/types';
 
 export interface SimHost extends AntWorld {
   ants: Ant[];
@@ -70,6 +71,10 @@ export interface SimHost extends AntWorld {
   /** anel de fronteira da exploração [O] */
   frontierR: number;
   frontierT: number;
+  /** efeitos visíveis (textos, poeira, ondas) — como toasts */
+  worldTexts: WorldText[];
+  dust: Dust[];
+  buffWaves: BuffWave[];
   /** marcas de toque [O] */
   tapMarks: Array<{ x: number; y: number; t: number; color: string }>;
   /** regeneração de recursos */
@@ -109,6 +114,28 @@ export function stepSimulation(host: SimHost, dt: number): void {
     host.smashFx = host.smashFx.filter((f) => f.t > 0);
   }
   host.shake = Math.max(0, host.shake - dt * 1.6);
+
+  // ── efeitos visíveis: brilho, poeira, ondas, textos ──────────────
+  for (const a of host.ants) {
+    if (a.glowT && a.glowT > 0) a.glowT = Math.max(0, a.glowT - dt);
+  }
+  for (const t of host.worldTexts) t.t -= dt;
+  if (host.worldTexts.some((t) => t.t <= 0)) {
+    host.worldTexts = host.worldTexts.filter((t) => t.t > 0);
+  }
+  for (const d of host.dust) d.t -= dt;
+  if (host.dust.some((d) => d.t <= 0)) {
+    host.dust = host.dust.filter((d) => d.t > 0);
+  }
+  for (const w of host.buffWaves) {
+    w.t -= dt;
+    w.r = w.maxR * (1 - w.t / w.tMax);
+  }
+  if (host.buffWaves.some((w) => w.t <= 0)) {
+    host.buffWaves = host.buffWaves.filter((w) => w.t > 0);
+  }
+  // trilha de poeira: quanto mais rápida, mais poeira (velocidade VISÍVEL)
+  spawnSpeedDust(host, dt);
 
   // ── inimigos (morta a formiga, sai da lista) ─────────────────────
   for (const e of host.enemies) {
@@ -263,10 +290,37 @@ function waveReward(host: SimHost): void {
   const before = host.nestHp;
   host.nestHp = Math.min(hpMax, host.nestHp + heal);
   const healed = Math.round(host.nestHp - before);
+  if (healed > 0) {
+    host.worldTexts.push({
+      x: host.nest.x, y: host.nest.y - 46, text: `+${healed} HP`,
+      color: '85,184,75', t: 1.6, tMax: 1.6,
+    });
+  }
   host.pushToast(
     `Onda repelida! +${leaves} folhas${healed > 0 ? ` e o ninho recuperou ${healed} de vida` : ''}.`,
     'success',
   );
+}
+
+/** Poeira atrás de formigas em movimento rápido — torna +velocidade visível. */
+const MOVING_STATES = new Set(['gotoResource', 'returnNest', 'explore', 'patrol', 'seekEnemy', 'command', 'returnHome', 'flee']);
+
+function spawnSpeedDust(host: SimHost, dt: number): void {
+  // limiar 92 px/s: base (82) não solta poeira; bônus fazem soltar
+  for (const a of host.ants) {
+    if (!MOVING_STATES.has(a.state) || a.z > 0) continue;
+    const v = antSpeed(a, host);
+    if (v <= 92) continue;
+    const rate = Math.min(0.6, (v - 92) / 220); // chance por passo
+    if (host.rng.next() < rate * dt * 60) {
+      host.dust.push({
+        x: a.x - Math.cos(a.angle) * 9 + (host.rng.next() - 0.5) * 5,
+        y: a.y + 5 + (host.rng.next() - 0.5) * 3,
+        t: 0.55, tMax: 0.55,
+      });
+      if (host.dust.length > 220) host.dust.shift();
+    }
+  }
 }
 
 /** [O] spawn na sombra: procura célula de névoa não revelada num anel */

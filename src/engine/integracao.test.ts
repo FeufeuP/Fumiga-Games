@@ -158,6 +158,73 @@ describe('integração: mecânicas principais', () => {
   });
 });
 
+describe('integração: efeitos visíveis (melhorias percebíveis)', () => {
+  it('dano e XP aparecem como texto flutuante no mundo', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    const antes = e.worldTexts.length;
+    e.damageEnemy({ hp: 100, hpMax: 100, x: 100, y: 100, scale: 40, xp: 8 } as never, 5, 'soldier');
+    expect(e.worldTexts.length).toBe(antes + 1);
+    expect(e.worldTexts[e.worldTexts.length - 1]!.text).toBe('-5');
+    // matar inimigo mostra +XP
+    e.damageEnemy({ hp: 4, hpMax: 100, x: 100, y: 100, scale: 40, xp: 8 } as never, 5, 'soldier');
+    const textos = e.worldTexts.map((t) => t.text);
+    expect(textos).toContain('+8 XP');
+  });
+
+  it('depósito mostra +recurso no ninho e compra gera onda de buff', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.deposit(3, 'leaf', 'worker');
+    expect(e.worldTexts.some((t) => t.text.includes('+3'))).toBe(true);
+    e.wallet.leaf = 500;
+    const ondas0 = e.buffWaves.length;
+    e.buyUpgrade('speed');
+    expect(e.buffWaves.length).toBe(ondas0 + 1);
+    // todas as formigas brilham
+    expect(e.ants.every((a) => (a.glowT ?? 0) > 0)).toBe(true);
+  });
+
+  it('upgrade de classe brilha só nas formigas da classe', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.wallet.leaf = 500;
+    e.buyUpgrade('scout'); // exploradoras
+    expect(e.ants.find((a) => a.cls === 'scout')!.glowT ?? 0).toBeGreaterThan(0);
+    expect(e.ants.find((a) => a.cls === 'worker')!.glowT ?? 0).toBe(0);
+  });
+
+  it('formiga rápida solta poeira; lenta não', () => {
+    const e = makeEngine();
+    e.newGame('campo');
+    e.cards = { passo_firme: 3, passo_leve: 3, divisao_trabalho: 3 };
+    e.cardMods = cardModsFrom(e.cards);
+    const w = e.ants.find((a) => a.cls === 'worker')!;
+    w.state = 'explore';
+    w.x = 100; w.y = 100;
+    for (let i = 0; i < 300; i++) stepSimulation(e as never, 1 / 60);
+    expect(e.dust.length).toBeGreaterThan(0);
+    // sem cartas a base (82 px/s) não passa do limiar 92
+    const e2 = makeEngine();
+    e2.newGame('campo');
+    const w2 = e2.ants.find((a) => a.cls === 'worker')!;
+    w2.state = 'explore';
+    w2.x = 100; w2.y = 100;
+    for (let i = 0; i < 120; i++) stepSimulation(e2 as never, 1 / 60);
+    expect(e2.dust.length).toBe(0);
+  });
+
+  it('loja mostra prévia concreta agora → próximo', async () => {
+    const { statPreview } = await import('../systems/shop');
+    const pv = statPreview('speed', { speed: 0 }, 0);
+    expect(pv).not.toBeNull();
+    expect(pv!.agora).toBe('82 px/s');
+    const pv2 = statPreview('speed', { speed: 1 }, 0);
+    expect(pv2!.agora).toBe('90 px/s');
+    expect(pv2!.proximo).toBe('98 px/s');
+  });
+});
+
 describe('integração: baralho roguelike 5A (doc 03)', () => {
   it('level-up abre painel de 3 cartas e CONGELA o mundo', () => {
     const e = makeEngine();

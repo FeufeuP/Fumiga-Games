@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { RESOURCES, UPGRADES, type UpgradeDef } from '../core/constants';
 import type { HudState } from '../core/types';
 import type { GameEngine } from '../engine/GameEngine';
+import { statPreview } from '../systems/shop';
 import styles from './shop.module.css';
 
 interface Props {
@@ -77,6 +78,19 @@ export default function ShopModal({ engine, hud, onClose }: Props) {
                   )}
                 </div>
                 <p className={styles.itemDesc}>{u.desc}</p>
+                {(() => {
+                  // MELHORIA VISÍVEL: número concreto agora → próximo
+                  const pv = statPreview(u.id, hud.upgrades, hud.rebirths, engine.cardMods, {
+                    population: hud.ants.worker + hud.ants.soldier + hud.ants.scout,
+                    populationMax: engine.populationMax(),
+                  });
+                  if (!pv || cost?.maxed) return null;
+                  return (
+                    <p className={styles.itemPreview}>
+                      {pv.rotulo}: <strong>{pv.agora}</strong> → {pv.proximo}
+                    </p>
+                  );
+                })()}
                 <div className={styles.itemCost}>
                   {cost?.maxed
                     ? 'MÁXIMO'

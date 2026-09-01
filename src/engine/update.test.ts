@@ -56,6 +56,9 @@ class MockHost implements SimHost {
   regenT = 0.8;
   maxRes: Partial<Record<ResourceKind, number>> = { leaf: 100 };
   props: Prop[] = [];
+  worldTexts: import('../core/types').WorldText[] = [];
+  dust: import('../core/types').Dust[] = [];
+  buffWaves: import('../core/types').BuffWave[] = [];
 
   constructor() {
     this.fog = new FogOfWar(this.w, this.h);
