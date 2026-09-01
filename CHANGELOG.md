@@ -4,6 +4,22 @@ Formato: fase do plano (`01_PLANO_DE_DESENVOLVIMENTO.md`) → o que entrou.
 
 ---
 
+## 0.3.1 — Botão voltar novo, plano 09 e executável único (2026-09-01)
+
+- **`btn_back.png` redesenhado**: quadrado 112×112 (múltiplo 2× do alvo de 56px
+  do CSS, `image-rendering: pixelated`), madeira nobre + moldura dourada +
+  seta de retorno, fundo externo 100% transparente (croma-key com
+  descontaminação de borda — zero resíduo, contorno com anti-alias).
+- **`Formigueiro-Jogo-Completo.html`**: executável único offline (~0,98 MB) —
+  JS + CSS inlinados e todos os 39 assets embutidos como data URI.
+  Gerado por `npm run build:single` (`scripts/build-singlefile.mjs`),
+  atendendo ao critério 4 de entrega do doc `09_PLANO_PROXIMAS_ATUALIZACOES.md`.
+- **Docs**: adicionado `09_PLANO_PROXIMAS_ATUALIZACOES.md` (Fases 6A–10A:
+  talentos, berçário, bestiário, save import/export + slots, Endless/Boss
+  Rush, clima por bioma, engenheiras) — nenhuma dessas fases implementada
+  ainda; são planejamento.
+- Testes: 144/144 passando; `tsc --noEmit` limpo.
+
 ## 0.1.0 — Reconstrução: Fases 1 e 2 (2026-08-31)
 
 > Contexto: o código-fonte da implementação anterior nunca foi enviado ao
