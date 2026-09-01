@@ -5,6 +5,7 @@
  *             foge ao tomar dano (fearT=0.9s).
  *   Soldado:   engaja inimigos revelados (X0=280) ou defende o ninho
  *             (inimigos revelados a 340+ext), movimento de enxame.
+ *             [P 5C] Suporta as 3 classes: Defensora, Tóxica e Gigante.
  *   Exploradora: anel de fronteira expansivo (frontierR), separação
  *             entre exploradoras, desvio de inimigos (140px).
  * Apenas exploradoras revelam a névoa (fogCell×2) [O].
@@ -73,11 +74,13 @@ export function revealRadiusOf(cls: AntClass): number {
 export function antSpeed(a: Ant, w: AntWorld): number {
   // [O] base 82 (scout ×1.35) · upgrade speed +10%/nível · carregando ×0.9
   let v = ANTS[a.cls].speed * w.mods.speedMult;
-  // cartas: Passo firme + Divisão de trabalho + Mente-colmeia + Passo leve +
-  // Pernas longas (exploradora) + Colônia unida (aliado ≤80px)
   let pct = w.cardMods.speedPct + w.cardMods.efficiencyPct + w.cardMods.colonyAllPct;
   if (a.cls === 'worker') pct += w.cardMods.workerSpeedPct;
   if (a.cls === 'scout') pct += w.cardMods.scoutSpeedPct;
+  if (a.cls === 'soldier' && w.unlockedClasses?.includes('gigante')) {
+    pct -= 15; // Gigante base: -15% velocidade
+    pct += w.cardMods.giantSpeedPct;
+  }
   if (a.nearAlly) pct += w.cardMods.nearAllyPct;
   // Passo interno: acelera perto do ninho (≤180px)
   if (a.cls === 'worker' && w.cardMods.nearNestSpeedPct > 0) {
@@ -99,28 +102,26 @@ export function antSpeed(a: Ant, w: AntWorld): number {
 }
 
 export function antDamage(a: Ant, w: AntWorld): { dmg: number; crit: boolean } {
-  // Divisão de trabalho + Mente-colmeia + Colônia unida
   let pct = w.cardMods.efficiencyPct + w.cardMods.colonyAllPct;
   if (a.nearAlly) pct += w.cardMods.nearAllyPct;
-  // Fúria da colônia: +dano por formiga viva (com teto)
   if (w.cardMods.furyPerAntPct > 0) {
     const vivas = w.ants.reduce((n, x) => n + (x.hp > 0 ? 1 : 0), 0);
     pct += Math.min(w.cardMods.furyCapPct, vivas * w.cardMods.furyPerAntPct);
   }
-  // Feromônio de fúria: ninho em perigo enfurece a colônia
   const nest = w.nest as { x: number; y: number; hp?: number; hpMax?: number };
   if (w.cardMods.nestLowHpFuryPct > 0 && nest.hpMax && nest.hp !== undefined) {
     if (nest.hp < nest.hpMax * 0.3) pct += w.cardMods.nestLowHpFuryPct;
   }
-  // Nuvem de feromônio: +dano (metade do bônus de velocidade) na zona do ninho
   if (w.cardMods.pheromoneZonePct > 0) {
     const dNest = Math.hypot(a.x - w.nest.x, a.y - w.nest.y);
     if (dNest <= 190) pct += w.cardMods.pheromoneZonePct * 0.5;
   }
   const base = ANTS[a.cls].dmg * w.mods.dmgMult * (1 + pct / 100);
   const crit = w.rng.chance(Math.min(0.9, w.mods.critChance + w.cardMods.critBonus));
-  // Mandíbulas afiadas (carta 5A): bônus FLAT de soldado, fora do crit
-  const flat = a.cls === 'soldier' ? w.cardMods.soldierDmgBonus : 0;
+  let flat = a.cls === 'soldier' ? w.cardMods.soldierDmgBonus : 0;
+  if (a.cls === 'soldier' && w.unlockedClasses?.includes('gigante')) {
+    flat += 5 + w.cardMods.giantDmgBonus;
+  }
   return { dmg: (crit ? base * w.mods.critMult : base) + flat, crit };
 }
 
@@ -169,18 +170,14 @@ function wanderRevealed(a: Ant, w: AntWorld, dt: number, ahead: number, turn: nu
   steerAlong(a, a.wanderAngle, antSpeed(a, w), dt, turn);
 }
 
-// ═════════════════════════════ OPERÁRIA (coleta) ═══════════════════
+// ═════════════════════════ OPERÁRIA (coleta) ═══════════════════
 
 export function updateWorker(a: Ant, w: AntWorld, dt: number): void {
   const speed = antSpeed(a, w);
-  // Faro apurado (carta 5A): +px de detecção
   let detect = BEHAVIOR.WORKER_DETECT * w.mods.visionMult + w.cardMods.workerDetectBonus;
-  // Sentido de recurso (carta 5B): enxerga recursos na área revelada toda
   if (w.cardMods.workerDetectAnywhere) detect = 1e9;
-  // Mochila (carta 5A): +capacidade de carga
   const cap = w.mods.carryCap + w.cardMods.workerCarryBonus;
   a.attackCd = Math.max(0, a.attackCd - dt);
-  // Instinto de retorno (carta 5B): inimigo perto → volta para casa
   if (w.cardMods.workerAutoFleePx > 0 && a.state !== 'returnNest' && a.state !== 'harvest') {
     const perigo = w.nearestVisibleEnemy(a.x, a.y, w.cardMods.workerAutoFleePx);
     if (perigo) {
@@ -189,7 +186,6 @@ export function updateWorker(a: Ant, w: AntWorld, dt: number): void {
     }
   }
 
-  // [O] carregando: pega mais se der, senão volta ao ninho
   if (a.carrying > 0) {
     if (a.carrying < cap) {
       const res = w.nearestRevealedResource(a.x, a.y, detect);
@@ -199,7 +195,7 @@ export function updateWorker(a: Ant, w: AntWorld, dt: number): void {
     }
     if (seek(a, w.nest.x, w.nest.y, speed, dt) || dist(a, w.nest.x, w.nest.y) < BEHAVIOR.DEPOSIT_RADIUS) {
       w.deposit(a.carrying, a.carryKind ?? 'leaf', 'worker');
-      a.hp = a.hpMax; // [O] entregar no ninho restaura a formiga
+      a.hp = a.hpMax;
       a.carrying = 0;
       a.carryKind = null;
       a.targetResId = null;
@@ -207,24 +203,20 @@ export function updateWorker(a: Ant, w: AntWorld, dt: number): void {
     return;
   }
 
-  // [O] auto-defesa (GA): operária revida inimigo revelado próximo
   const foe = w.nearestVisibleEnemy(a.x, a.y, BEHAVIOR.WORKER_SELFDEFENSE * w.mods.visionMult);
   if (foe) {
     engage(a, w, foe, dt);
     return;
   }
 
-  // [O] procura recurso revelado dentro de N0×visão → coleta instantânea
   const res = w.nearestRevealedResource(a.x, a.y, detect);
   if (res) {
     if (gotoAndPickup(a, w, res.x, res.y, res.kind, res.id, speed, dt)) return;
   }
 
-  // [O] vagueio mantendo-se na área revelada
   wanderRevealed(a, w, dt, BEHAVIOR.WANDER_AHEAD, 4, 2.6);
 }
 
-/** Vai até o nó e pega instantaneamente quando R0+Ii/2 [O pickup]. */
 function gotoAndPickup(
   a: Ant, w: AntWorld, x: number, y: number, kind: ResourceKind, id: number,
   speed: number, dt: number,
@@ -246,7 +238,6 @@ function dist(a: Ant, x: number, y: number): number {
   return Math.hypot(x - a.x, y - a.y);
 }
 
-/** [O engageEnemy] persegue e ataca (corpo a Hr=12). */
 function engage(a: Ant, w: AntWorld, e: Enemy, dt: number): void {
   const ext = w.enemyExtent(e);
   const speed = antSpeed(a, w);
@@ -261,20 +252,42 @@ function engage(a: Ant, w: AntWorld, e: Enemy, dt: number): void {
       w.playSfx('attack');
       if (crit) w.events.emit('toast', { text: 'Golpe crítico!', kind: 'info' });
       a.attackCd = (BEHAVIOR.ATTACK_COOLDOWN_SEC * w.buffs.attackCdMult) / w.mods.attackSpeedMult;
+
+      // [P 5C] Gigante: knockback + dano em área
+      if (a.cls === 'soldier' && w.unlockedClasses?.includes('gigante')) {
+        const dx = e.x - a.x;
+        const dy = e.y - a.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const kb = 20 + w.cardMods.giantKnockbackPx;
+        e.x += (dx / d) * kb;
+        e.y += (dy / d) * kb;
+        if (w.cardMods.giantAoePx > 0) {
+          for (const o of w.enemies) {
+            if (o === e || o.hp <= 0) continue;
+            if (Math.hypot(o.x - e.x, o.y - e.y) <= w.cardMods.giantAoePx) {
+              w.damageEnemy(o, dmg * 0.5, 'soldier');
+            }
+          }
+        }
+      }
     }
   }
 }
 
-// ═════════════════════════════ SOLDADO (combate) ═══════════════════
+// ═════════════════════════ SOLDADO (combate) ═══════════════════
 
 export function updateSoldier(a: Ant, w: AntWorld, dt: number): void {
   const speed = antSpeed(a, w);
   a.attackCd = Math.max(0, a.attackCd - dt);
 
-  // [O] engaja inimigo revelado dentro de X0×visão… (+ Instinto de caça, carta 5A)
-  let foe = w.nearestVisibleEnemy(a.x, a.y, BEHAVIOR.SOLDIER_AGGRO * w.mods.visionMult + w.cardMods.soldierAggroBonus);
+  const isToxica = w.unlockedClasses?.includes('toxica');
+  const isDefensora = w.unlockedClasses?.includes('defensora');
+
+  let aggroDist = BEHAVIOR.SOLDIER_AGGRO * w.mods.visionMult + w.cardMods.soldierAggroBonus;
+  if (isToxica) aggroDist = Math.max(aggroDist, 180 + w.cardMods.toxicRangeBonus);
+
+  let foe = w.nearestVisibleEnemy(a.x, a.y, aggroDist);
   if (!foe) {
-    // …ou defende o ninho: inimigo revelado a 340+extensão do ninho [O]
     let best = Infinity;
     for (const e of w.enemies) {
       if (e.hp <= 0 || !w.fog.isRevealed(e.x, e.y)) continue;
@@ -286,12 +299,57 @@ export function updateSoldier(a: Ant, w: AntWorld, dt: number): void {
       }
     }
   }
+
+  // [P 5C] Tóxica: cuspir ácido a distância (180px)
+  if (foe && isToxica) {
+    const dFoe = Math.hypot(foe.x - a.x, foe.y - a.y);
+    const spitRange = 180 + w.cardMods.toxicRangeBonus;
+    if (dFoe <= spitRange) {
+      a.dir = foe.x >= a.x ? 1 : -1;
+      if (a.attackCd <= 0) {
+        const dx = foe.x - a.x;
+        const dy = foe.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const baseDmg = 5 + w.cardMods.toxicAcidDmg;
+        const crit = w.rng.chance(w.cardMods.toxicCritChance);
+        if (w.spawnAcidProjectile) {
+          w.spawnAcidProjectile({
+            id: Math.random(),
+            x: a.x,
+            y: a.y,
+            vx: (dx / len) * 340,
+            vy: (dy / len) * 340,
+            dmg: crit ? baseDmg * 2 : baseDmg,
+            corrosionSec: 2 + w.cardMods.toxicCorrosionSecBonus,
+            spread: w.cardMods.toxicSpreadTargets,
+            crit,
+          });
+        }
+        w.playSfx('attack');
+        a.attackCd = (BEHAVIOR.ATTACK_COOLDOWN_SEC / (1 + w.cardMods.toxicRatePct / 100)) / w.mods.attackSpeedMult;
+      }
+      return;
+    }
+  }
+
   if (foe) {
     engage(a, w, foe, dt);
     return;
   }
 
-  // [O swarmDir] enxame: coesão+alinhamento com outros soldados
+  // [P 5C] Defensora: patrulha anel de defesa ao redor do ninho (150px)
+  if (isDefensora) {
+    const ringR = 150 + w.cardMods.defenderRingRadiusBonus;
+    const ang = a.seed * Math.PI * 2;
+    const tx = w.nest.x + Math.cos(ang) * ringR;
+    const ty = w.nest.y + Math.sin(ang) * ringR;
+    seek(a, tx, ty, speed, dt);
+    if (w.cardMods.defenderRegen > 0 && a.hp < a.hpMax) {
+      a.hp = Math.min(a.hpMax, a.hp + w.cardMods.defenderRegen * dt);
+    }
+    return;
+  }
+
   const swarm = swarmDir(a, w.ants);
   if (swarm) {
     let hx = a.x + (swarm.x * 0.6 + Math.cos(a.angle)) * 46;
@@ -309,11 +367,9 @@ export function updateSoldier(a: Ant, w: AntWorld, dt: number): void {
     return;
   }
 
-  // [O] vagueio do soldado dentro do revelado
   wanderRevealed(a, w, dt, 60, 3, 2.2);
 }
 
-/** [O swarmDir] direção do bando: separação (40) + coesão (44) + alinhamento (66). */
 function swarmDir(a: Ant, ants: readonly Ant[]): { x: number; y: number } | null {
   let cx = 0, cy = 0, n = 0;
   let ax = 0, ay = 0, m = 0;
@@ -363,14 +419,12 @@ export function updateScout(a: Ant, w: AntWorld, dt: number): void {
   const speed = antSpeed(a, w);
   a.attackCd = Math.max(0, a.attackCd - dt);
 
-  // [O] auto-defesa (BA): revida inimigo revelado próximo
   const foe = w.nearestVisibleEnemy(a.x, a.y, BEHAVIOR.OTHER_SELFDEFENSE * w.mods.visionMult);
   if (foe) {
     engage(a, w, foe, dt);
     return;
   }
 
-  // [O] decide o alvo no anel de fronteira (a cada 0.4s ou ao chegar)
   const maxFrontier = Math.hypot(
     Math.max(w.nest.x, w.w - w.nest.x),
     Math.max(w.nest.y, w.h - w.nest.y),
@@ -383,7 +437,6 @@ export function updateScout(a: Ant, w: AntWorld, dt: number): void {
     a.scoutDecideT = 0.4;
     let tx = w.nest.x + Math.cos(a.scoutA) * ringR;
     let ty = w.nest.y + Math.sin(a.scoutA) * ringR;
-    // separação de outras exploradoras (60px)
     for (const o of w.ants) {
       if (o.id === a.id || o.cls !== 'scout') continue;
       const dx = a.x - o.x;
@@ -400,7 +453,6 @@ export function updateScout(a: Ant, w: AntWorld, dt: number): void {
     a.scoutTy = Math.min(w.h - 30, Math.max(30, ty));
   }
 
-  // [O] desvio de inimigos próximos (140px)
   let hx = a.scoutTx;
   let hy = a.scoutTy;
   let near: Enemy | null = null;
@@ -429,9 +481,8 @@ export function updateScout(a: Ant, w: AntWorld, dt: number): void {
 
 // ═════════════════════════════ DESPACHO ════════════════════════════
 
-/** Despacho por classe — chamado pelo passo de simulação. */
 export function updateAnt(a: Ant, w: AntWorld, dt: number): void {
-  if (a.z > 0) return; // voando com o smash do chefe — física cuida
+  if (a.z > 0) return;
   if (a.hp <= 0) return;
   if (a.stunT > 0) {
     a.stunT -= dt;
@@ -445,7 +496,6 @@ export function updateAnt(a: Ant, w: AntWorld, dt: number): void {
   if (a.hp < a.hpMax && w.mods.healPerSec > 0) {
     a.hp = Math.min(a.hpMax, a.hp + w.mods.healPerSec * dt);
   }
-  // [O] comando do jogador (toque duplo/simplez): vai ao ponto marcado
   if (a.state === 'command') {
     if (seek(a, a.tx, a.ty, antSpeed(a, w), dt)) {
       a.state = 'idle';

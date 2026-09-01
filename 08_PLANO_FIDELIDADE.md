@@ -413,3 +413,27 @@ Gigante (6) desbloqueadas — fora do sorteio até custar quitina (próxima fase
   reembolso, armadilha prende 2s, provocação redireciona inimigo, espinhos,
   chuva de ácido, guardas temporários, vanguarda dá XP, persistência) ·
   `npm run build` ok.
+
+---
+
+## Apêndice H — HUD rearranjado, velocidade do jogo (1x/2x/3x/5x) e XP visível (01/09/2026) ✅
+
+### Melhorias
+- **Layout topo-direita limpo**: `CameraControls` ocupa exclusivamente o canto superior direito sem sobreposição de texto.
+- **Recursos colapsáveis**: Folhas (comida da Rainha) visíveis no card principal; demais recursos (Cogumelo, Cacto, Banana, Flor, Cristal, Quitina e Exploração) agrupados sob o botão `▼ VER MAIS` / `▲ VER MENOS`.
+- **Barra de XP**: Adicionada logo abaixo do NÍVEL no card de status (`XP: {xp}/{xpToNext}` com gradiente azul e tooltip informativo).
+- **Controle de Velocidade**: Botão `▶ 1x` / `⏩ 2x` / `⏩ 3x` / `⚡ 5x` no rodapé do HUD com iluminação azul quando acelerado. Atalho de teclado `V` alterna a velocidade em tempo real sem afetar o tempo do relógio da simulação ou o congelamento ao abrir modais/cartas.
+
+---
+
+## Apêndice I — Fase 5C: Classes com Quitina (01/09/2026) ✅
+
+### Classes & Mecânicas
+- **Desbloqueio com Quitina**: Aba **CLASSES** no menu de pausa (P) que consome quitina 🦴 acumulada de chefes:
+  - 🛡️ **Defensora** (🦴3): Soldados patrulham o anel de defesa (raio 150px do ninho), ganham armadura e regeneração fora de combate.
+  - 🧪 **Tóxica** (🦴6): Soldados cospem ácido a 180px com dano contínuo de corrosão, chance crítica e propagação.
+  - 🗿 **Gigante** (🦴10): Soldados crescem +45% em tamanho, ganham +40 HP, +5 dano, empurrão (knockback) nos inimigos ao atingir e dano em área.
+- **17 Cartas de Classe**: Liberadas para sorteio no baralho roguelike após o desbloqueio da respectiva classe (Defensora: 5, Tóxica: 6, Gigante: 6).
+- **Renderer & Visual**: Anel de defesa tracejado azul ao redor do ninho, projéteis de ácido verdes com efeito de brilho, aura de corrosão em inimigos corroídos e renderização ampliada para soldados gigantes.
+- **Save v3 & Testes**: Salvamento persistente do status das classes e da velocidade atual do jogo.
+

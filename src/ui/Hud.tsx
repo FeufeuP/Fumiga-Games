@@ -1,9 +1,11 @@
 /**
- * HUD — fiel ao original [O]: card no topo-esquerda com
- * NIVEL(⭐)/RENASC(👑)/FORMIGAS(🐜)/FOLHAS(🍃) + barras NINHO e RAINHA
- * (cores >50% #5fce55, >25% #e8c23c, senão #e2574c); XP NÃO aparece
- * no HUD (só em ESTATISTICAS). Onda no centro, recursos no topo-direita.
+ * HUD — fiel ao original [O] com melhorias de layout:
+ * Card no topo-esquerda com NIVEL(⭐), barra de XP, RENASC(👑), FORMIGAS(🐜), FOLHAS(🍃),
+ * e painel expandível VER MAIS para recursos adicionais + exploração.
+ * Canto topo-direita livre para os controles de câmera (CameraControls).
+ * Botão de velocidade do jogo (1x, 2x, 3x, 5x) na barra de ações.
  */
+import { useState } from 'react';
 import { RESOURCES, type ResourceKind } from '../core/constants';
 import type { HudState } from '../core/types';
 import styles from './hud.module.css';
@@ -15,25 +17,67 @@ interface Props {
   onRallyAttack: () => void;
   onRallyCollect: () => void;
   onAdvanceWave: () => void;
+  onCycleSpeed?: () => void;
 }
 
-const RES_ORDER: ResourceKind[] = ['leaf', 'mushroom', 'cactus', 'banana', 'flower', 'crystal'];
+const EXTRA_RES_ORDER: ResourceKind[] = ['mushroom', 'cactus', 'banana', 'flower', 'crystal'];
 
-export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRallyCollect, onAdvanceWave }: Props) {
+export default function Hud({
+  hud,
+  onOpenShop,
+  onOpenMaps,
+  onRallyAttack,
+  onRallyCollect,
+  onAdvanceWave,
+  onCycleSpeed,
+}: Props) {
+  const [showMore, setShowMore] = useState(false);
+
   const hungerPct = (hud.queenHunger / hud.queenHungerMax) * 100;
   const nestPct = (hud.nestHp / hud.nestHpMax) * 100;
   const waveSec = Math.max(0, Math.ceil(hud.wave.tSec));
   const antsTotal = hud.ants.worker + hud.ants.soldier + hud.ants.scout;
   const barColor = (pct: number) => (pct > 50 ? '#5fce55' : pct > 25 ? '#e8c23c' : '#e2574c');
 
+  const speedLabel = hud.speed === 1 ? '▶ 1x' : hud.speed === 2 ? '⏩ 2x' : hud.speed === 3 ? '⏩ 3x' : '⚡ 5x';
+
+  // XP progress calculation
+  const xpPct = Math.min(100, Math.max(0, (hud.xp / (hud.xpToNext || 1)) * 100));
+  const xpRemaining = Math.max(0, hud.xpToNext - hud.xp);
+
   return (
     <div className={styles.hud}>
-      {/* topo-esquerda [O]: card NIVEL/RENASC/FORMIGAS/FOLHAS + NINHO/RAINHA */}
+      {/* topo-esquerda: status card com XP e botão VER MAIS */}
       <div className={styles.statusCard}>
-        <div className={styles.statusRow}><span>⭐ NIVEL</span><strong>{hud.level}</strong></div>
-        <div className={styles.statusRow}><span>👑 RENASC</span><strong>{hud.rebirths}</strong></div>
-        <div className={styles.statusRow}><span>🐜 FORMIGAS</span><strong>{antsTotal}</strong></div>
-        <div className={styles.statusRow}><span>🍃 FOLHAS</span><strong>{hud.resources.leaf ?? 0}</strong></div>
+        <div className={styles.statusRow}>
+          <span>⭐ NIVEL</span>
+          <strong>{hud.level}</strong>
+        </div>
+
+        {/* Barra de XP */}
+        <div className={styles.xpBarWrap} title={`XP: ${hud.xp} / ${hud.xpToNext} (faltam ${xpRemaining} XP)`}>
+          <div className={styles.xpLabel}>
+            <span>XP</span>
+            <span>{hud.xp}/{hud.xpToNext}</span>
+          </div>
+          <div className={styles.bar}>
+            <div className={styles.xpBarFill} style={{ width: `${xpPct}%` }} />
+          </div>
+        </div>
+
+        <div className={styles.statusRow}>
+          <span>👑 RENASC</span>
+          <strong>{hud.rebirths}</strong>
+        </div>
+        <div className={styles.statusRow}>
+          <span>🐜 FORMIGAS</span>
+          <strong>{antsTotal}</strong>
+        </div>
+        <div className={styles.statusRow}>
+          <span>🍃 FOLHAS</span>
+          <strong>{hud.resources.leaf ?? 0}</strong>
+        </div>
+
         <div className={styles.statusBars}>
           <div className={styles.statusBarRow}>
             <span>NINHO</span>
@@ -48,6 +92,32 @@ export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRall
             </div>
           </div>
         </div>
+
+        {/* Botão VER MAIS para expandir outros recursos */}
+        <button
+          className={styles.verMaisBtn}
+          onClick={() => setShowMore((prev) => !prev)}
+        >
+          {showMore ? '▲ VER MENOS' : '▼ VER MAIS'}
+        </button>
+
+        {showMore && (
+          <div className={styles.expandedResources}>
+            {EXTRA_RES_ORDER.map((k) => (
+              <div key={k} className={styles.statusRow}>
+                <span>{RESOURCES[k].icon} {RESOURCES[k].name}</span>
+                <strong>{hud.resources[k] ?? 0}</strong>
+              </div>
+            ))}
+            {hud.chitin > 0 && (
+              <div className={styles.statusRow}>
+                <span>🦴 Quitina</span>
+                <strong style={{ color: '#e0c068' }}>{hud.chitin}</strong>
+              </div>
+            )}
+            <div className={styles.explored}>EXPLORADO {hud.exploredPct}%</div>
+          </div>
+        )}
       </div>
 
       {/* topo-centro: onda + chefe + ADIANTAR ONDA [O] */}
@@ -75,21 +145,6 @@ export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRall
         )}
       </div>
 
-      {/* topo-direita: recursos + exploração [O] */}
-      <div className={styles.resources}>
-        {RES_ORDER.map((k) => (
-          <span key={k} className={styles.res}>
-            {RESOURCES[k].icon} {hud.resources[k] ?? 0}
-          </span>
-        ))}
-        {hud.chitin > 0 && (
-          <span className={styles.res} title="Quitina — moeda das classes futuras">
-            🦴 {hud.chitin}
-          </span>
-        )}
-        <span className={styles.explored}>EXPLORADO {hud.exploredPct}%</span>
-      </div>
-
       {/* toasts */}
       <div className={styles.toasts}>
         {hud.toasts.map((t) => (
@@ -99,8 +154,17 @@ export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRall
         ))}
       </div>
 
-      {/* rodapé-direita: rally [O] + loja + mapas */}
+      {/* rodapé-direita: velocidade + rally [O] + loja + mapas */}
       <div className={styles.actions}>
+        {onCycleSpeed && (
+          <button
+            className={`${styles.actionBtn} ${styles.speedBtn} ${hud.speed > 1 ? styles.speedActive : ''}`}
+            onClick={onCycleSpeed}
+            title="Velocidade do jogo (Atalho: Tecla V)"
+          >
+            {speedLabel}
+          </button>
+        )}
         <button
           className={`${styles.actionBtn} ${styles.rallyBtn} ${hud.rally.attackCd <= 0 ? styles.rallyReady : ''}`}
           disabled={hud.rally.attackCd > 0 || hud.gameOver}

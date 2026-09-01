@@ -114,6 +114,9 @@ export interface Enemy {
   patrolT: number;        // vagueio ambiente [O]
   /** [P 5B] preso em armadilha de resina — não anda nem ataca */
   rootT?: number;
+  /** [P 5C] corroído por ácido */
+  corrosionT?: number;
+  corrosionDmgPerSec?: number;
 }
 
 export interface ResourceNode {
@@ -160,6 +163,18 @@ export interface WaveState {
 export type Resources = Record<ResourceKind, number>;
 export type UpgradeLevels = Record<string, number>;
 
+export interface AcidProjectile {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  dmg: number;
+  corrosionSec: number;
+  spread: number;
+  crit: boolean;
+}
+
 /** O que o renderizador enxerga — GameEngine implementa. */
 export interface Scene {
   readonly mapId: MapId;
@@ -189,6 +204,12 @@ export interface Scene {
   readonly traps: ReadonlyArray<{ x: number; y: number; cd: number }>;
   /** zona de feromônio ativa? (raio 190 do ninho) */
   readonly pheromoneZone: boolean;
+  /** [P 5C] projéteis de ácido da classe Tóxica */
+  readonly acidProjectiles?: ReadonlyArray<AcidProjectile>;
+  /** [P 5C] anel de defesa da classe Defensora */
+  readonly defenderRingRadius?: number;
+  /** [P 5C] classe Gigante desbloqueada? */
+  readonly giantUnlocked?: boolean;
 }
 
 /** Contrato entre motor e comportamentos (testável com mock). */
@@ -211,6 +232,8 @@ export interface AntWorld {
   readonly cardMods: CardMods;
   /** buffs momentâneos do rally [O] */
   readonly buffs: { collectSpeedMult: number; attackCdMult: number };
+  /** [P 5C] classes desbloqueadas nesta run */
+  readonly unlockedClasses?: readonly string[];
 
   takeResource(kind: ResourceKind, n: number): boolean;
   deposit(units: number, kind: ResourceKind, by: AntClass): void;
@@ -225,6 +248,8 @@ export interface AntWorld {
   antCount(cls: AntClass): number;
   /** efeitos sonoros (motor de áudio) */
   playSfx(name: string): void;
+  /** [P 5C] dispara projétil de ácido */
+  spawnAcidProjectile?(p: AcidProjectile): void;
 }
 
 /** Multiplicadores aplicados às formigas (loja). */
@@ -298,4 +323,9 @@ export interface HudState {
   slots: Record<string, { usados: number; teto: number }>;
   /** substituição pendente (slot cheio) */
   replaceDialog: { novaId: string; opcoes: Array<{ id: string; nome: string; icone: string; nivel: number; nivelMax: number }> } | null;
+
+  /** [P 5C] multiplicador de velocidade (1x, 2x, 3x, 5x) */
+  speed: number;
+  /** [P 5C] classes desbloqueadas nesta run ('defensora' | 'toxica' | 'gigante') */
+  unlockedClasses: string[];
 }
