@@ -1,8 +1,8 @@
 # 📱 GitHub Actions Workflow para Build de APK Android
 
-Como o GitHub App não possui permissão direta para editar a pasta `.github/workflows/` no repositório remoto, você pode criar o arquivo diretamente na aba **Actions** ou **Add file** do GitHub.
+Como o GitHub App não possui permissão direta para editar a pasta `.github/workflows/` no repositório remoto, você pode criar ou editar o arquivo diretamente no GitHub.
 
-### 📝 Conteúdo do arquivo `.github/workflows/build-apk.yml`
+### 📝 Conteúdo atualizado do arquivo `.github/workflows/build-apk.yml`
 
 ```yaml
 name: Build Android APK
@@ -29,17 +29,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Setup Java JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci || npm install
+          npm install @capacitor/core @capacitor/cli @capacitor/android --no-save
 
       - name: Run tests and web build
         run: |
@@ -74,8 +76,6 @@ jobs:
 
 ---
 
-### 🚀 Como ativar no GitHub:
-1. No seu repositório no GitHub, clique em **Add file** > **Create new file**.
-2. No nome do arquivo, digite: `.github/workflows/build-apk.yml`
-3. Cole o código YAML acima e clique em **Commit changes**.
-4. Vá para a aba **Actions** do GitHub para acompanhar o build automatizado e baixar o APK atualizado!
+### 🚀 O que já foi feito para corrigir o erro:
+1. **Pull Request #2 Mesclado no `main`:** Todo o código atualizado, as dependências do Capacitor e o arquivo `capacitor.config.ts` foram unificados na branch `main`.
+2. **Atualização do YAML:** Usamos Node.js 22 e `actions/setup-java@v5` para evitar avisos de descontinuação, e garantimos que as dependências do Capacitor estejam instaladas antes do sync.
