@@ -13,7 +13,7 @@ import { createEnemy, createBoss, updateEnemy } from '../entities/enemies';
 import { updateQueen, nestRegen, nestRepair, type QueenState } from '../systems/queen';
 import { applySeparation, clampToWorld } from './movement';
 import { antSpeed } from '../entities/ants';
-import type { Ant, AntClass, AntWorld, BuffWave, Dust, Enemy, Toast, WorldText } from '../core/types';
+import type { AcidProjectile, Ant, AntClass, AntWorld, BuffWave, Dust, Enemy, Toast, WorldText } from '../core/types';
 
 export interface SimHost extends AntWorld {
   ants: Ant[];
@@ -96,6 +96,9 @@ export interface SimHost extends AntWorld {
   spawnResource(kind: ResourceKind): void;
   killAnt(a: Ant): void;
   onAntRespawned(cls: AntClass): void;
+
+  // ── 5C: Projéteis de Ácido da classe Tóxica ─────────────────────
+  acidProjectiles?: AcidProjectile[];
 }
 
 export function stepSimulation(host: SimHost, dt: number): void {
@@ -111,6 +114,49 @@ export function stepSimulation(host: SimHost, dt: number): void {
     applySeparation(host.ants, dt * ENGINE.SEPARATION_EVERY_STEPS, 14);
   }
   for (const a of host.ants) clampToWorld(a, host.w, host.h);
+
+  // ── projéteis de ácido (classe Tóxica) ───────────────────────────
+  if (host.acidProjectiles && host.acidProjectiles.length > 0) {
+    for (let i = host.acidProjectiles.length - 1; i >= 0; i--) {
+      const p = host.acidProjectiles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      let hit = false;
+      for (const e of host.enemies) {
+        if (e.hp <= 0) continue;
+        if (Math.hypot(e.x - p.x, e.y - p.y) <= e.r + 12) {
+          host.damageEnemy(e, p.dmg, 'soldier', p.crit);
+          e.corrosionT = p.corrosionSec;
+          e.corrosionDmgPerSec = 2.5;
+          if (p.spread > 0) {
+            let count = 0;
+            for (const o of host.enemies) {
+              if (o === e || o.hp <= 0) continue;
+              if (Math.hypot(o.x - e.x, o.y - e.y) <= 120 && count < p.spread) {
+                host.damageEnemy(o, p.dmg * 0.6, 'soldier');
+                o.corrosionT = p.corrosionSec;
+                o.corrosionDmgPerSec = 2.5;
+                count++;
+              }
+            }
+          }
+          hit = true;
+          break;
+        }
+      }
+      if (hit || p.x < 0 || p.x > host.w || p.y < 0 || p.y > host.h) {
+        host.acidProjectiles.splice(i, 1);
+      }
+    }
+  }
+
+  // ── corrosão nos inimigos ────────────────────────────────────────
+  for (const e of host.enemies) {
+    if (e.hp > 0 && (e.corrosionT ?? 0) > 0) {
+      e.corrosionT = Math.max(0, (e.corrosionT ?? 0) - dt);
+      host.damageEnemy(e, (e.corrosionDmgPerSec ?? 2.5) * dt, 'soldier');
+    }
+  }
 
   // ── timers do ciclo A [O] ────────────────────────────────────────
   updateRally(host, dt);
@@ -147,7 +193,6 @@ export function stepSimulation(host: SimHost, dt: number): void {
   if (host.buffWaves.some((w) => w.t <= 0)) {
     host.buffWaves = host.buffWaves.filter((w) => w.t > 0);
   }
-  // trilha de poeira: quanto mais rápida, mais poeira (velocidade VISÍVEL)
   spawnSpeedDust(host, dt);
 
   // ── inimigos (morta a formiga, sai da lista) ─────────────────────
@@ -172,7 +217,6 @@ export function stepSimulation(host: SimHost, dt: number): void {
   // ── névoa: SÓ a exploradora revela (fogCell×2) [O] ───────────────
   for (const a of host.ants) {
     if (a.cls === 'scout') {
-      // Olhos largos (carta 5B): +px de raio de revelação
       host.fog.reveal(a.x, a.y, FOG.SCOUT_RADIUS + host.cardMods.scoutRevealBonus);
     }
   }
@@ -197,15 +241,12 @@ export function stepSimulation(host: SimHost, dt: number): void {
       toast: (text, kind) => host.pushToast(text, kind),
       onQueenDead: () => host.onQueenDead(),
     }, dt, {
-      drainMult: host.cardMods.hungerDrainMult,       // Apetite contido
-      perItemBonus: host.cardMods.hungerPerItemBonus, // Porção reforçada
-      satietySec: host.cardMods.satietySec,           // Saciedade duradoura (5B)
+      drainMult: host.cardMods.hungerDrainMult,
+      perItemBonus: host.cardMods.hungerPerItemBonus,
+      satietySec: host.cardMods.satietySec,
     });
-    // [P 5B] ovos da Rainha (Postura acelerada / Ninhada dupla / Coração dourado)
     host.updateQueenProduction?.(dt);
 
-    // ── ninho: regen fora de combate ou reparo em ruína ────────────
-    // (Reparo rápido acelera os dois; Fortaleza viva regenera sozinha)
     const cm = host.cardMods;
     const enemyNear = host.enemies.some(
       (e) =>
@@ -214,16 +255,13 @@ export function stepSimulation(host: SimHost, dt: number): void {
     );
     const hpMax = host.nestHpMax();
     if (host.nestHp > 0) {
-      // Engenheiras (carta 5B): regenera mesmo com inimigo por perto
       const bloqueada = enemyNear && !cm.repairInCombat;
       host.nestHp = nestRegen(host.nestHp, hpMax, bloqueada, dt * cm.repairMult);
-      // Fortaleza viva (carta 5A): regen extra fora de combate
       if (!enemyNear && host.nestHp > 0 && host.nestHp < hpMax && cm.nestRegenBonus > 0) {
         host.nestHp = Math.min(hpMax, host.nestHp + cm.nestRegenBonus * dt);
       }
     } else {
       const workers = host.ants.filter((a) => a.cls === 'worker' && a.hp > 0).length;
-      // Mãos hábeis (carta 5B): +HP/s flat no reparo em ruína
       const r = nestRepair(host.nestHp, hpMax, workers, dt * cm.repairMult);
       host.nestHp = Math.min(hpMax, r.hp + cm.repairHpPerSec * dt);
       if (r.rebuilt) {
@@ -244,7 +282,6 @@ export function stepSimulation(host: SimHost, dt: number): void {
   if (host.tick % 30 === 0) {
     const antes = host.exploredPct;
     host.exploredPct = Math.round(host.fog.revealedFraction() * 100);
-    // Vanguarda (carta 5B): XP por área nova revelada
     const delta = host.exploredPct - antes;
     if (delta > 0 && host.cardMods.xpPerNewAreaPct > 0) {
       host.addXp(delta * host.cardMods.xpPerNewAreaPct);
@@ -255,7 +292,6 @@ export function stepSimulation(host: SimHost, dt: number): void {
     }
   }
 
-  // ── Colônia unida (carta 5B): recalcula quem tem aliado ≤80px ────
   if (host.tick % 15 === 0) {
     const ants = host.ants;
     for (const a of ants) {
@@ -267,7 +303,6 @@ export function stepSimulation(host: SimHost, dt: number): void {
     }
   }
 
-  // ── guardas temporários (Muralha de defensores) expiram ──────────
   if (host.ants.some((a) => a.tempT !== undefined)) {
     for (const a of host.ants) {
       if (a.tempT !== undefined) a.tempT -= dt;
@@ -275,21 +310,19 @@ export function stepSimulation(host: SimHost, dt: number): void {
     host.ants = host.ants.filter((a) => a.tempT === undefined || a.tempT > 0);
   }
 
-  // ── baús: revelados pela exploradora são coletados ───────────────
   if (host.chests.length > 0) {
     for (const c of host.chests) {
       if (host.fog.isRevealed(c.x, c.y)) host.onChestFound?.(c);
     }
   }
 
-  // ── armadilhas de resina (carta 5B) ──────────────────────────────
   if (host.cardMods.trapCdSec > 0) {
     for (const trap of host.traps) {
       if (trap.cd > 0) { trap.cd -= dt; continue; }
       for (const e of host.enemies) {
         if (e.hp <= 0 || (e.rootT ?? 0) > 0) continue;
         if (Math.hypot(e.x - trap.x, e.y - trap.y) <= 30) {
-          e.rootT = 2; // preso por 2s
+          e.rootT = 2;
           trap.cd = host.cardMods.trapCdSec;
           host.worldTexts.push({ x: trap.x, y: trap.y - 20, text: '🪤', color: '251,208,70', t: 1.2, tMax: 1.2 });
           break;
@@ -298,10 +331,8 @@ export function stepSimulation(host: SimHost, dt: number): void {
     }
   }
 
-  // ── comportamentos periódicos (cartas 5B) ────────────────────────
   updateCardBehaviors(host, dt);
 
-  // ── toasts ───────────────────────────────────────────────────────
   for (const t of host.toasts) t.tSec -= dt;
   if (host.toasts.some((t) => t.tSec <= 0)) {
     host.toasts = host.toasts.filter((t) => t.tSec > 0);
@@ -351,7 +382,6 @@ function updateWaves(host: SimHost, dt: number): void {
   }
 }
 
-/** [O] recompensa por repelir onda: folhas + XP + ninho +20% */
 function waveReward(host: SimHost): void {
   const n = host.wave.num;
   const leaves = WAVES.REWARD_LEAVES(n);
@@ -375,16 +405,14 @@ function waveReward(host: SimHost): void {
   host.onWaveCleared?.();
 }
 
-/** Poeira atrás de formigas em movimento rápido — torna +velocidade visível. */
 const MOVING_STATES = new Set(['gotoResource', 'returnNest', 'explore', 'patrol', 'seekEnemy', 'command', 'returnHome', 'flee']);
 
 function spawnSpeedDust(host: SimHost, dt: number): void {
-  // limiar 92 px/s: base (82) não solta poeira; bônus fazem soltar
   for (const a of host.ants) {
     if (!MOVING_STATES.has(a.state) || a.z > 0) continue;
     const v = antSpeed(a, host);
     if (v <= 92) continue;
-    const rate = Math.min(0.6, (v - 92) / 220); // chance por passo
+    const rate = Math.min(0.6, (v - 92) / 220);
     if (host.rng.next() < rate * dt * 60) {
       host.dust.push({
         x: a.x - Math.cos(a.angle) * 9 + (host.rng.next() - 0.5) * 5,
@@ -396,7 +424,6 @@ function spawnSpeedDust(host: SimHost, dt: number): void {
   }
 }
 
-/** [O] spawn na sombra: procura célula de névoa não revelada num anel */
 export function randomShadowSpawn(
   host: SimHost,
   rng: { next(): number },
@@ -415,7 +442,6 @@ export function randomShadowSpawn(
       }
     }
   }
-  // fallback: borda do mundo
   const ang = rng.next() * Math.PI * 2;
   return {
     x: Math.min(host.w - 40, Math.max(40, host.nest.x + Math.cos(ang) * 500)),
@@ -423,7 +449,6 @@ export function randomShadowSpawn(
   };
 }
 
-/** Sorteia uma espécie da fauna do mapa [O] waveKinds */
 export function pickWaveKind(host: SimHost, rng: { next(): number }): EnemyKind {
   const kinds = MAPS[host.mapId].enemies.map((e) => e.kind);
   if (kinds.length === 0) return 'spider';
@@ -441,7 +466,6 @@ export function makeWaveEnemy(host: SimHost, power?: number): Enemy {
     x = spot.x + (host.rng.next() - 0.5) * FOG.CELL;
     y = spot.y + (host.rng.next() - 0.5) * FOG.CELL;
   } else {
-    // [O] sem sombra: nasce fora de uma borda aleatória
     const side = Math.floor(host.rng.next() * 4);
     const pad = h + WAVES.EDGE_SPAWN_PAD;
     if (side === 0) { x = -pad; y = host.rng.next() * host.h; }
@@ -454,7 +478,6 @@ export function makeWaveEnemy(host: SimHost, power?: number): Enemy {
 
 export function makeBoss(host: SimHost): Enemy {
   const cfg = MAPS[host.mapId].boss;
-  // [O] chefe nasce em ponto livre: ≥240 das bordas, ≥720 do ninho
   let x = host.w / 2;
   let y = 60;
   for (let t = 0; t < 80; t++) {
@@ -475,7 +498,6 @@ export { ENEMIES };
 
 // ═════════════════════ CICLO A [O] ═════════════════════════════════
 
-/** Física de voo: formiga no ar (z>0) segue balística, sem agir. */
 function updateAntFlight(host: SimHost, dt: number): void {
   const G = 900;
   for (const a of host.ants) {
@@ -484,18 +506,17 @@ function updateAntFlight(host: SimHost, dt: number): void {
     a.y += a.vy * dt;
     a.z += a.vz * dt;
     a.vz -= G * dt;
-    // [O] arrasto horizontal no ar
     const drag = Math.max(0, 1 - 1.6 * dt);
     a.vx *= drag;
     a.vy *= drag;
-    a.walkPhase += 12 * dt; // patas pedalando no ar
+    a.walkPhase += 12 * dt;
     if (a.x < 8) { a.x = 8; a.vx = Math.abs(a.vx); }
     if (a.y < 8) { a.y = 8; a.vy = Math.abs(a.vy); }
     if (a.x > host.w - 8) { a.x = host.w - 8; a.vx = -Math.abs(a.vx); }
     if (a.y > host.h - 8) { a.y = host.h - 8; a.vy = -Math.abs(a.vy); }
     if (a.z <= 0) {
       a.z = 0; a.vx = 0; a.vy = 0; a.vz = 0;
-      a.stunT = 0.9; // [O] atordoa ao aterrissar
+      a.stunT = 0.9;
       a.state = 'idle';
       a.targetResId = null;
       a.targetEnemyId = null;
@@ -503,7 +524,6 @@ function updateAntFlight(host: SimHost, dt: number): void {
   }
 }
 
-/** [O computeFrontier] anel cresce 1 célula quando o anel atual está revelado. */
 function updateFrontier(host: SimHost, dt: number): void {
   host.frontierT -= dt;
   if (host.frontierT > 0) return;
@@ -514,7 +534,6 @@ function updateFrontier(host: SimHost, dt: number): void {
     Math.max(host.nest.y, host.h - host.nest.y),
   );
   if (host.frontierR >= maxR) return;
-  // anel revelado? 18 amostras ao redor
   const r = host.frontierR;
   let revealed = true;
   for (let i = 0; i < 18; i++) {
@@ -527,7 +546,6 @@ function updateFrontier(host: SimHost, dt: number): void {
   if (revealed) host.frontierR = Math.min(host.frontierR + cell, maxR);
 }
 
-/** Rally: decai buffs e cooldowns. */
 function updateRally(host: SimHost, dt: number): void {
   const r = host.rally;
   r.attackBuffT = Math.max(0, r.attackBuffT - dt);
@@ -536,7 +554,6 @@ function updateRally(host: SimHost, dt: number): void {
   r.collectCd = Math.max(0, r.collectCd - dt);
 }
 
-/** Chefe: aggro da barra + smash a cada 15s após o 1º golpe. */
 function updateBossTimers(host: SimHost, dt: number): void {
   host.bossAggroT = Math.max(0, host.bossAggroT - dt);
   const boss = host.boss;
@@ -548,7 +565,6 @@ function updateBossTimers(host: SimHost, dt: number): void {
   }
 }
 
-/** [O] bossSmash: dano + arremesso em área de 90px. */
 function bossSmash(host: SimHost, boss: Enemy): void {
   host.shake = Math.max(host.shake, 1);
   host.playSfx('smash');
@@ -556,7 +572,7 @@ function bossSmash(host: SimHost, boss: Enemy): void {
   for (const a of host.ants) {
     if (Math.hypot(a.x - boss.x, a.y - boss.y) > BOSS_SMASH.RADIUS) continue;
     host.damageAnt(a.id, boss.dmg, boss.kind, boss.x, boss.y);
-    if (a.hp <= 0) continue; // morreu com o golpe
+    if (a.hp <= 0) continue;
     const dx = a.x - boss.x;
     const dy = a.y - boss.y;
     const d = Math.hypot(dx, dy) || 1;
@@ -570,7 +586,6 @@ function bossSmash(host: SimHost, boss: Enemy): void {
   }
 }
 
-/** [O] cemitério: formigas renascem (YA×(1−0.3·upgrade), mín. 3s). */
 function updateRespawnQueue(host: SimHost, dt: number): void {
   for (let i = host.respawnQueue.length - 1; i >= 0; i--) {
     const q = host.respawnQueue[i] as { cls: AntClass; t: number };
@@ -583,7 +598,6 @@ function updateRespawnQueue(host: SimHost, dt: number): void {
   }
 }
 
-/** [O] regeneração de recursos: até 2/tipo a cada 0.8s até maxRes×fator. */
 function updateResourceRegen(host: SimHost, dt: number): void {
   host.regenT -= dt;
   if (host.regenT > 0) return;
@@ -604,7 +618,6 @@ function updateResourceRegen(host: SimHost, dt: number): void {
   host.rebuildResourceIndex();
 }
 
-/** Tempo de respawn [O]: YA×(1−0.3·upgrade), mínimo 3s. */
 export function respawnSeconds(respawnLevel: number): number {
   return Math.max(
     ANT_RESPAWN.MIN_SEC,
@@ -612,21 +625,16 @@ export function respawnSeconds(respawnLevel: number): number {
   );
 }
 
-/** Rally: multiplicador do cooldown de ataque dos soldados. */
 export function soldierAttackCdMult(host: SimHost): number {
   return host.rally.attackBuffT > 0 ? RALLY.ATTACK_SPEED_MULT : 1;
 }
 
-
-
 // ═════════════════════ COMPORTAMENTOS DAS CARTAS ═══════════════════
 
-/** Enxame de mordidas · Chuva de ácido · Investida gigante (cartas 5B). */
 function updateCardBehaviors(host: SimHost, dt: number): void {
   const cm = host.cardMods;
   const t = host.cardTimers;
 
-  // Enxame de mordidas: a cada 8s, formigas ≤240px de um inimigo mordem juntas
   if (cm.swarmBiteDmg > 0) {
     t.swarmT -= dt;
     if (t.swarmT <= 0) {
@@ -638,7 +646,7 @@ function updateCardBehaviors(host: SimHost, dt: number): void {
           if (a.hp <= 0) continue;
           if (Math.hypot(a.x - e.x, a.y - e.y) <= 240) {
             mordidas++;
-            a.targetEnemyId = e.id; // coordena o ataque
+            a.targetEnemyId = e.id;
           }
         }
         if (mordidas > 0) {
@@ -653,7 +661,6 @@ function updateCardBehaviors(host: SimHost, dt: number): void {
     }
   }
 
-  // Chuva de ácido: a cada 20s, cai no maior grupo de inimigos
   if (cm.acidRainDmg > 0) {
     t.acidT -= dt;
     if (t.acidT <= 0) {
@@ -680,7 +687,6 @@ function updateCardBehaviors(host: SimHost, dt: number): void {
     }
   }
 
-  // Investida gigante: a cada 30s, onda do ninho atinge a linha de frente
   if (cm.giantChargeDmg > 0) {
     t.chargeT -= dt;
     if (t.chargeT <= 0) {
@@ -690,7 +696,7 @@ function updateCardBehaviors(host: SimHost, dt: number): void {
         if (e.hp <= 0) continue;
         if (Math.hypot(e.x - host.nest.x, e.y - host.nest.y) <= 260) {
           host.damageEnemy(e, cm.giantChargeDmg, 'soldier');
-          e.rootT = 1; // atordoado
+          e.rootT = 1;
           acertou = true;
         }
       }

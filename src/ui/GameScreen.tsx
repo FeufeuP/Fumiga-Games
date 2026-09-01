@@ -1,7 +1,8 @@
 /**
  * Tela de jogo — canvas do mundo + HUD + loja/mapas/fim de jogo.
  * Input: arrastar move a câmera (vira CAM LIVRE), clique curto no ninho
- * entra no interior, WASD/setas no modo livre, atalhos L (loja) e M (mapas).
+ * entra no interior, WASD/setas no modo livre, atalhos L (loja) e M (mapas),
+ * V (velocidade 1x/2x/3x/5x).
  */
 import { useEffect, useRef, useState } from 'react';
 import type { GameEngine } from '../engine/GameEngine';
@@ -48,6 +49,7 @@ export default function GameScreen({ engine, hud }: Props) {
       if (k === 'c') engine.centerCamera();
       if (k === 'f') engine.setCameraMode(hud.cameraMode === 'follow' ? 'free' : 'follow');
       if (k === 'n') engine.cycleAnt();
+      if (k === 'v') engine.cycleSpeed();
       if (k === 'p' && modal === 'none' && !hud.gameOver && !hud.cardPanel && !hud.replaceDialog) openPause();
       if (k === 'l' && !hud.gameOver) setModal((m) => (m === 'shop' ? 'none' : 'shop'));
       if (k === 'm' && !hud.gameOver) setModal((m) => (m === 'maps' ? 'none' : 'maps'));
@@ -60,7 +62,7 @@ export default function GameScreen({ engine, hud }: Props) {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
     };
-  }, [engine, hud.cameraMode, hud.gameOver]);
+  }, [engine, hud.cameraMode, hud.gameOver, modal]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     dragRef.current = { down: true, dragged: false, x: e.clientX, y: e.clientY };
@@ -86,8 +88,6 @@ export default function GameScreen({ engine, hud }: Props) {
     if (d.dragged) return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const world = engine.camera.toWorld(e.clientX - rect.left, e.clientY - rect.top);
-    // [O registerTap] toque no ninho → interior; toque simples chama
-    // exploradoras; toque duplo (≤320ms) chama soldados.
     if (engine.clickWorld(world.x, world.y) === 'interior') {
       engine.enterInterior();
       return;
@@ -123,6 +123,7 @@ export default function GameScreen({ engine, hud }: Props) {
         onRallyAttack={() => engine.rallyAttack()}
         onRallyCollect={() => engine.rallyCollect()}
         onAdvanceWave={() => engine.advanceWave()}
+        onCycleSpeed={() => engine.cycleSpeed()}
       />
       {!hud.gameOver && <CameraControls engine={engine} hud={hud} onOpenPause={openPause} />}
       {modal === 'shop' && !hud.gameOver && (
@@ -142,17 +143,43 @@ export default function GameScreen({ engine, hud }: Props) {
 }
 
 function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState; onClose: () => void }) {
-  const [tab, setTab] = useState<'stats' | 'colonia' | 'cartas' | 'ach' | 'score' | null>(null);
+  const [tab, setTab] = useState<'stats' | 'colonia' | 'cartas' | 'classes' | 'ach' | 'score' | null>(null);
   const coloniaStats = colonyStats(hud.upgrades, hud.rebirths, engine.cardMods, {
     population: hud.ants.worker + hud.ants.soldier + hud.ants.scout,
     populationMax: engine.populationMax(),
     nestHpMax: hud.nestHpMax,
   });
-  const close = () => { setModalExit(); };
   const setModalExit = () => { onClose(); engine.backToMenu(); };
-  const titulo = tab === 'stats' ? 'ESTATÍSTICAS' : tab === 'colonia' ? 'COLÔNIA (loja + cartas)'
+  const titulo = tab === 'stats' ? 'ESTATÍSTICAS'
+    : tab === 'colonia' ? 'COLÔNIA (loja + cartas)'
     : tab === 'cartas' ? 'CARTAS DA BUILD'
+    : tab === 'classes' ? 'CLASSES COM QUITINA'
     : tab === 'ach' ? 'CONQUISTAS' : 'PLACAR';
+
+  const classesDefs = [
+    {
+      id: 'defensora',
+      nome: 'Defensora',
+      icone: '🛡️',
+      cost: 3,
+      desc: 'Soldados guardam anel de defesa a 150px do ninho e absorvem mais dano.',
+    },
+    {
+      id: 'toxica',
+      nome: 'Tóxica',
+      icone: '🧪',
+      cost: 6,
+      desc: 'Soldados cospem ácido a 180px com corrosão contínua nos inimigos.',
+    },
+    {
+      id: 'gigante',
+      nome: 'Gigante',
+      icone: '🗿',
+      cost: 10,
+      desc: 'Soldados crescem 45%, ganham +40 HP, +5 dano e empurram inimigos ao atacar.',
+    },
+  ] as const;
+
   return (
     <div className={styles.pauseOverlay}>
       <div className={styles.pausePanel}>
@@ -163,9 +190,10 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
             <button className={styles.btn} onClick={() => setTab('stats')}>ESTATÍSTICAS</button>
             <button className={styles.btn} onClick={() => setTab('colonia')}>COLÔNIA</button>
             <button className={styles.btn} onClick={() => setTab('cartas')}>CARTAS ({hud.cards.length})</button>
+            <button className={styles.btn} onClick={() => setTab('classes')}>CLASSES (🦴 {hud.chitin})</button>
             <button className={styles.btn} onClick={() => setTab('ach')}>CONQUISTAS</button>
             <button className={styles.btn} onClick={() => setTab('score')}>PLACAR</button>
-            <button className={styles.btn} onClick={close}>SAIR PARA O MENU</button>
+            <button className={styles.btn} onClick={setModalExit}>SAIR PARA O MENU</button>
           </div>
         )}
         {tab === 'stats' && (
@@ -211,6 +239,37 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
             ))}
           </div>
         )}
+        {tab === 'classes' && (
+          <div className={styles.cartasLista}>
+            <p className={styles.cartasResumo}>
+              🦴 Quitina disponível: <strong>{hud.chitin}</strong>
+            </p>
+            {classesDefs.map((cls) => {
+              const unlocked = hud.unlockedClasses?.includes(cls.id);
+              return (
+                <div key={cls.id} className={styles.cartaRow} style={{ padding: '10px' }}>
+                  <span className={styles.cartaIcone} style={{ fontSize: '20px' }}>{cls.icone}</span>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <strong style={{ color: '#fde056', fontSize: '13px' }}>{cls.nome}</strong>
+                    <span style={{ fontSize: '11px', color: '#c4b5a0' }}>{cls.desc}</span>
+                  </div>
+                  {unlocked ? (
+                    <span style={{ color: '#5fce55', fontWeight: 'bold', fontSize: '12px' }}>✓ ATIVA</span>
+                  ) : (
+                    <button
+                      className={styles.btnPrimary}
+                      style={{ padding: '6px 12px', fontSize: '11px' }}
+                      disabled={hud.chitin < cls.cost}
+                      onClick={() => engine.unlockClass(cls.id)}
+                    >
+                      LIBERAR (🦴 {cls.cost})
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {tab === 'colonia' && (
           <div className={styles.stats}>
             {coloniaStats.map((st) => (
@@ -243,7 +302,7 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
         {tab !== null && (
           <div className={styles.pauseBtns}>
             <button className={styles.btnPrimary} onClick={() => setTab(null)}>VOLTAR</button>
-            <button className={styles.btn} onClick={close}>SAIR PARA O MENU</button>
+            <button className={styles.btn} onClick={setModalExit}>SAIR PARA O MENU</button>
           </div>
         )}
       </div>

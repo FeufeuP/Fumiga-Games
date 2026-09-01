@@ -17,7 +17,7 @@ import { EventBus } from '../core/events';
 import { Store } from '../core/store';
 import { Clock } from '../core/clock';
 import type {
-  Ant, AntMods, AntWorld, BuffWave, CameraMode, Dust, Enemy, HudState, Prop, ResourceNode,
+  AcidProjectile, Ant, AntMods, AntWorld, BuffWave, CameraMode, Dust, Enemy, HudState, Prop, ResourceNode,
   Resources, Scene, Toast, UpgradeLevels, WaveState, WorldText, AntClass as AntClassT,
 } from '../core/types';
 import { SpatialHash } from './spatialHash';
@@ -117,6 +117,8 @@ function emptyHud(): HudState {
       evolucao: { usados: 0, teto: 0 },
     },
     replaceDialog: null,
+    speed: 1,
+    unlockedClasses: [],
   };
 }
 
@@ -200,8 +202,9 @@ export class GameEngine implements AntWorld, Scene {
   };
   /** substituição pendente: carta nova esperando decisão */
   replaceDialog: { novaId: string; opcoes: Array<{ id: string; nome: string; icone: string; nivel: number; nivelMax: number }> } | null = null;
-  /** classes desbloqueadas (Fase 6 — por ora nenhuma) */
-  readonly classesDesbloqueadas: string[] = [];
+  /** classes desbloqueadas (Fase 5C) */
+  classesDesbloqueadas: string[] = [];
+  acidProjectiles: AcidProjectile[] = [];
   /** ciclo de classes dos ovos da Rainha */
   private eggCycle = 0;
 
@@ -253,6 +256,60 @@ export class GameEngine implements AntWorld, Scene {
   }
 
   // ═════════════════════════ ANTWORLD ═══════════════════════════════
+
+  spawnAcidProjectile(p: AcidProjectile): void {
+    this.acidProjectiles.push(p);
+  }
+
+  get defenderRingRadius(): number | undefined {
+    return this.classesDesbloqueadas.includes('defensora') ? 150 + this.cardMods.defenderRingRadiusBonus : undefined;
+  }
+
+  get giantUnlocked(): boolean {
+    return this.classesDesbloqueadas.includes('gigante');
+  }
+
+  get unlockedClasses(): readonly string[] {
+    return this.classesDesbloqueadas;
+  }
+
+  unlockClass(cls: 'defensora' | 'toxica' | 'gigante'): boolean {
+    if (this.classesDesbloqueadas.includes(cls)) return false;
+    const costs: Record<string, number> = { defensora: 3, toxica: 6, gigante: 10 };
+    const cost = costs[cls] ?? 10;
+    if (this.chitin < cost) {
+      this.pushToast(`Quitina insuficiente! Requer 🦴 ${cost}`, 'warn');
+      return false;
+    }
+    this.chitin -= cost;
+    this.classesDesbloqueadas.push(cls);
+    const names: Record<string, string> = {
+      defensora: '🛡️ Classe Defensora desbloqueada!',
+      toxica: '🧪 Classe Tóxica desbloqueada!',
+      gigante: '🗿 Classe Gigante desbloqueada!',
+    };
+    this.pushToast(names[cls] ?? 'Classe desbloqueada!', 'success');
+    this.publishHud();
+    writeSave(serialize(this));
+    return true;
+  }
+
+  getSpeed(): number {
+    return this.clock.speed;
+  }
+
+  setSpeed(speed: number): void {
+    this.clock.setSpeed(speed);
+    this.publishHud();
+  }
+
+  cycleSpeed(): number {
+    const c = this.clock.speed;
+    const n = c === 1 ? 2 : c === 2 ? 3 : c === 3 ? 5 : 1;
+    this.clock.setSpeed(n);
+    this.publishHud();
+    return n;
+  }
 
   takeResource(kind: ResourceKind, n: number): boolean {
     if ((this.wallet[kind] ?? 0) >= n) {
@@ -1211,6 +1268,9 @@ export class GameEngine implements AntWorld, Scene {
     this.nextChestId = 1;
     this.chitin = 0;
     this.bossesThisRun = 0;
+    this.classesDesbloqueadas = [];
+    this.acidProjectiles = [];
+    this.clock.setSpeed(1);
     this.slotBonus = { especializacao: 0, comportamento: 0, passiva: 0 };
     this.eggCycle = 0;
     // [O] totais e conquistas são CUMULATIVOS (persistem entre runs);
@@ -1745,6 +1805,8 @@ export class GameEngine implements AntWorld, Scene {
         .filter((x): x is NonNullable<typeof x> => x !== null),
       slots: this.slotUsage(),
       replaceDialog: this.replaceDialog ? { novaId: this.replaceDialog.novaId, opcoes: [...this.replaceDialog.opcoes] } : null,
+      speed: this.clock.speed,
+      unlockedClasses: [...this.classesDesbloqueadas],
     });
   }
 }

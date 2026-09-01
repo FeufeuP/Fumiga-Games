@@ -75,6 +75,30 @@ export interface CardMods {
   giantChargeDmg: number;      // investida gigante (dano a cada 30s)
   nestLowHpFuryPct: number;    // feromônio de fúria (% com ninho <30%)
 
+  // ── [P 5C] Defensora (5 cartas) ──
+  defenderRingRadiusBonus: number;
+  defenderArmor: number;
+  defenderMaxTargets: number;
+  defenderStandDmgPct: number;
+  defenderKnockbackImmune: boolean;
+  defenderRegen: number;
+
+  // ── [P 5C] Tóxica (6 cartas) ──
+  toxicAcidDmg: number;
+  toxicRangeBonus: number;
+  toxicRatePct: number;
+  toxicCorrosionSecBonus: number;
+  toxicSpreadTargets: number;
+  toxicCritChance: number;
+
+  // ── [P 5C] Gigante (6 cartas) ──
+  giantHpBonus: number;
+  giantDmgBonus: number;
+  giantKnockbackPx: number;
+  giantImmune: boolean;
+  giantAoePx: number;
+  giantSpeedPct: number;
+
   // Evoluções (doc 03 §5) — flags de comportamento
   legiaoAtaque: boolean;       // soldados ≤130px dividem o dano recebido
   caravanaRecursos: boolean;   // coletoras em fila descarregam juntas
@@ -143,6 +167,27 @@ export function emptyCardMods(): CardMods {
     guardSummonSec: 0,
     giantChargeDmg: 0,
     nestLowHpFuryPct: 0,
+
+    defenderRingRadiusBonus: 0,
+    defenderArmor: 0,
+    defenderMaxTargets: 0,
+    defenderStandDmgPct: 0,
+    defenderKnockbackImmune: false,
+    defenderRegen: 0,
+
+    toxicAcidDmg: 0,
+    toxicRangeBonus: 0,
+    toxicRatePct: 0,
+    toxicCorrosionSecBonus: 0,
+    toxicSpreadTargets: 0,
+    toxicCritChance: 0,
+
+    giantHpBonus: 0,
+    giantDmgBonus: 0,
+    giantKnockbackPx: 0,
+    giantImmune: false,
+    giantAoePx: 0,
+    giantSpeedPct: 0,
 
     legiaoAtaque: false,
     caravanaRecursos: false,
@@ -215,6 +260,29 @@ function add(m: CardMods, id: string, nivel: number): void {
       m.furyPerAntPct = v;
       m.furyCapPct = v === 3 ? 45 : 60;
       break;
+
+    // ── Defensora ──
+    case 'anel_ampliado': m.defenderRingRadiusBonus = v; break;
+    case 'escudo_reforcado': m.defenderArmor = v; break;
+    case 'interceptacao': m.defenderMaxTargets = v; break;
+    case 'postura_firme': m.defenderStandDmgPct = v; m.defenderKnockbackImmune = true; break;
+    case 'recuperacao': m.defenderRegen = v; break;
+
+    // ── Tóxica ──
+    case 'acido_concentrado': m.toxicAcidDmg = v; break;
+    case 'jato_longo': m.toxicRangeBonus = v; break;
+    case 'cadencia_rapida': m.toxicRatePct = v; break;
+    case 'corrosao_prolongada': m.toxicCorrosionSecBonus = v; break;
+    case 'propagacao': m.toxicSpreadTargets = v; break;
+    case 'acido_critico': m.toxicCritChance = v / 100; break;
+
+    // ── Gigante ──
+    case 'massa': m.giantHpBonus = v; break;
+    case 'impacto': m.giantDmgBonus = v; break;
+    case 'empurrao': m.giantKnockbackPx = v; break;
+    case 'inabalavel': m.giantImmune = true; break;
+    case 'onda_choque': m.giantAoePx = v; break;
+    case 'passo_pesado': m.giantSpeedPct = v; break;
 
     // ── Comportamentos ──
     case 'enxame_mordidas': m.swarmBiteDmg = v; break;
