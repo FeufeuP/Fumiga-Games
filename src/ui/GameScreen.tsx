@@ -11,6 +11,10 @@ import Hud from './Hud';
 import ShopModal from './ShopModal';
 import MapsModal from './MapsModal';
 import CameraControls from './CameraControls';
+import CardPanel from './CardPanel';
+import ReplaceDialog from './ReplaceDialog';
+import { colonyStats } from '../systems/shop';
+import { RARIDADES, SLOTS } from '../roguelike/cards';
 import styles from './game.module.css';
 
 interface Props {
@@ -21,6 +25,7 @@ interface Props {
 export default function GameScreen({ engine, hud }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef({ down: false, dragged: false, x: 0, y: 0 });
+  const tapRef = useRef<{ lastAt: number; pending: number }>({ lastAt: 0, pending: 0 });
   const [modal, setModal] = useState<'none' | 'shop' | 'maps' | 'pause'>('none');
 
   const openPause = (): void => {
@@ -43,7 +48,7 @@ export default function GameScreen({ engine, hud }: Props) {
       if (k === 'c') engine.centerCamera();
       if (k === 'f') engine.setCameraMode(hud.cameraMode === 'follow' ? 'free' : 'follow');
       if (k === 'n') engine.cycleAnt();
-      if (k === 'p' && modal === 'none' && !hud.gameOver) openPause();
+      if (k === 'p' && modal === 'none' && !hud.gameOver && !hud.cardPanel && !hud.replaceDialog) openPause();
       if (k === 'l' && !hud.gameOver) setModal((m) => (m === 'shop' ? 'none' : 'shop'));
       if (k === 'm' && !hud.gameOver) setModal((m) => (m === 'maps' ? 'none' : 'maps'));
       if (k === 'escape') setModal('none');
@@ -81,8 +86,23 @@ export default function GameScreen({ engine, hud }: Props) {
     if (d.dragged) return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const world = engine.camera.toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    // [O registerTap] toque no ninho → interior; toque simples chama
+    // exploradoras; toque duplo (≤320ms) chama soldados.
     if (engine.clickWorld(world.x, world.y) === 'interior') {
       engine.enterInterior();
+      return;
+    }
+    const now = performance.now();
+    const t = tapRef.current;
+    if (now - t.lastAt < 320) {
+      t.lastAt = 0;
+      window.clearTimeout(t.pending);
+      engine.callSoldiers(world.x, world.y);
+    } else {
+      t.lastAt = now;
+      t.pending = window.setTimeout(() => {
+        engine.callScouts(world.x, world.y);
+      }, 320);
     }
   };
 
@@ -102,6 +122,7 @@ export default function GameScreen({ engine, hud }: Props) {
         onOpenMaps={() => setModal('maps')}
         onRallyAttack={() => engine.rallyAttack()}
         onRallyCollect={() => engine.rallyCollect()}
+        onAdvanceWave={() => engine.advanceWave()}
       />
       {!hud.gameOver && <CameraControls engine={engine} hud={hud} onOpenPause={openPause} />}
       {modal === 'shop' && !hud.gameOver && (
@@ -114,22 +135,34 @@ export default function GameScreen({ engine, hud }: Props) {
         <PauseMenu engine={engine} hud={hud} onClose={() => { engine.clock.paused = false; setModal('none'); }} />
       )}
       {hud.gameOver && <GameOverOverlay engine={engine} hud={hud} />}
+      {!hud.gameOver && hud.cardPanel && !hud.replaceDialog && <CardPanel engine={engine} hud={hud} />}
+      {!hud.gameOver && hud.replaceDialog && <ReplaceDialog engine={engine} hud={hud} />}
     </div>
   );
 }
 
 function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState; onClose: () => void }) {
-  const [tab, setTab] = useState<'stats' | 'ach' | 'score' | null>(null);
+  const [tab, setTab] = useState<'stats' | 'colonia' | 'cartas' | 'ach' | 'score' | null>(null);
+  const coloniaStats = colonyStats(hud.upgrades, hud.rebirths, engine.cardMods, {
+    population: hud.ants.worker + hud.ants.soldier + hud.ants.scout,
+    populationMax: engine.populationMax(),
+    nestHpMax: hud.nestHpMax,
+  });
   const close = () => { setModalExit(); };
   const setModalExit = () => { onClose(); engine.backToMenu(); };
+  const titulo = tab === 'stats' ? 'ESTATÍSTICAS' : tab === 'colonia' ? 'COLÔNIA (loja + cartas)'
+    : tab === 'cartas' ? 'CARTAS DA BUILD'
+    : tab === 'ach' ? 'CONQUISTAS' : 'PLACAR';
   return (
     <div className={styles.pauseOverlay}>
       <div className={styles.pausePanel}>
-        <h2>{tab ? (tab === 'stats' ? 'ESTATÍSTICAS' : tab === 'ach' ? 'CONQUISTAS' : 'PLACAR') : 'PAUSADO'}</h2>
+        <h2>{tab ? titulo : 'PAUSADO'}</h2>
         {tab === null && (
           <div className={styles.pauseBtns}>
             <button className={styles.btnPrimary} onClick={onClose}>CONTINUAR</button>
             <button className={styles.btn} onClick={() => setTab('stats')}>ESTATÍSTICAS</button>
+            <button className={styles.btn} onClick={() => setTab('colonia')}>COLÔNIA</button>
+            <button className={styles.btn} onClick={() => setTab('cartas')}>CARTAS ({hud.cards.length})</button>
             <button className={styles.btn} onClick={() => setTab('ach')}>CONQUISTAS</button>
             <button className={styles.btn} onClick={() => setTab('score')}>PLACAR</button>
             <button className={styles.btn} onClick={close}>SAIR PARA O MENU</button>
@@ -146,6 +179,45 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
             <span>Conquistas desbloqueadas: {hud.achievements.done}/{hud.achievements.total}</span>
           </div>
         )}
+        {tab === 'cartas' && (
+          <div className={styles.cartasLista}>
+            <p className={styles.cartasResumo}>
+              🦴 Quitina: {hud.chitin} ·{' '}
+              {(['especializacao', 'comportamento', 'passiva'] as const).map((cat) => (
+                <span key={cat}>
+                  {SLOTS[cat].nome}: {hud.slots[cat]?.usados ?? 0}/{hud.slots[cat]?.teto ?? 0}{' '}
+                </span>
+              ))}
+            </p>
+            {hud.cards.length === 0 && (
+              <p className={styles.cartasVazio}>Nenhuma carta ainda — suba de nível para escolher!</p>
+            )}
+            {hud.cards.map((c) => (
+              <div key={c.id} className={styles.cartaRow}>
+                <span className={styles.cartaIcone}>{c.icone}</span>
+                <span className={styles.cartaNome}>{c.nome}</span>
+                <span className={styles.cartaPips}>
+                  {Array.from({ length: c.nivelMax }, (_, i) => (
+                    <span key={i} className={i < c.nivel ? styles.cartaPipOn : styles.cartaPipOff} />
+                  ))}
+                </span>
+                <span
+                  className={styles.cartaRar}
+                  style={{ color: (RARIDADES as Record<string, { cor: string }>)[c.raridade]?.cor }}
+                >
+                  {c.categoria === 'evolucao' ? 'EVOLUÇÃO' : `nv ${c.nivel}/${c.nivelMax}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {tab === 'colonia' && (
+          <div className={styles.stats}>
+            {coloniaStats.map((st) => (
+              <span key={st.label}>{st.label}: <strong>{st.value}</strong></span>
+            ))}
+          </div>
+        )}
         {tab === 'ach' && (
           <div className={styles.achList}>
             {hud.achievements.progress.map((a) => (
@@ -158,8 +230,13 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
         )}
         {tab === 'score' && (
           <div className={styles.stats}>
-            <span>Missões ×{100}: {hud.missions.done} × 100 = {hud.missions.done * 100}</span>
-            <span>Renascimentos ×{200}: {hud.rebirths} × 200 = {hud.rebirths * 200}</span>
+            <span>Recursos ×5: {hud.totals.delivered} × 5 = {hud.totals.delivered * 5}</span>
+            <span>Inimigos ×20: {hud.totals.enemiesKilled} × 20 = {hud.totals.enemiesKilled * 20}</span>
+            <span>Chefes ×100: {hud.totals.bossesKilled} × 100 = {hud.totals.bossesKilled * 100}</span>
+            <span>XP ×2: {hud.xp} × 2 = {hud.xp * 2}</span>
+            <span>Conquistas ×50: {hud.achievements.done} × 50 = {hud.achievements.done * 50}</span>
+            <span>Missões ×100: {hud.missions.done} × 100 = {hud.missions.done * 100}</span>
+            <span>Renascimentos ×200: {hud.rebirths} × 200 = {hud.rebirths * 200}</span>
             <span><strong>PLACAR: {hud.score} pontos</strong></span>
           </div>
         )}

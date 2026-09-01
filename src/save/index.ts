@@ -8,6 +8,7 @@ import { SAVE, type AntClass, type EnemyKind, type MapId, type ResourceKind } fr
 import type { AntState, Resources, UpgradeLevels, WaveState } from '../core/types';
 import { FogOfWar } from '../engine/fogOfWar';
 import { modsFrom, emptyUpgrades } from '../systems/shop';
+import { cardModsFrom } from '../roguelike/modifiers';
 import { resumeAntIds } from '../entities/ants';
 import { resumeEnemyIds } from '../entities/enemies';
 import { generateWorld } from '../world/world';
@@ -22,6 +23,11 @@ interface SavedAnt {
   targetResId: number | null; targetEnemyId: number | null;
   tx: number; ty: number; walkPhase: number; seed: number;
   z: number; vx: number; vy: number; vz: number;
+  // IA fiel [O] (ausente em saves antigos → default)
+  angle?: number; wanderAngle?: number; wanderT?: number;
+  scoutA?: number; scoutR?: number;
+  // 5B: guarda temporário (Muralha de defensores)
+  tempT?: number;
 }
 
 export interface RunSaveV2 {
@@ -37,7 +43,11 @@ export interface RunSaveV2 {
   unlockedMaps: MapId[];
   wavesByMap: Partial<Record<MapId, number>>;
   totals: { delivered: number; enemiesKilled: number; bossesKilled: number };
-  queen: { hunger: number; dead: boolean; feedT: number; warn30: boolean; warn10: boolean };
+  queen: {
+    hunger: number; hungerMax?: number; dead: boolean; feedT: number;
+    warn30: boolean; warn10: boolean;
+    eggT?: number; satietyT?: number;
+  };
   nestHp: number;
   wave: WaveState;
   ants: SavedAnt[];
@@ -56,6 +66,16 @@ export interface RunSaveV2 {
   rebirths?: number;
   ownedAnts?: Record<AntClass, number>;
   respawnQueue?: Array<{ cls: AntClass; t: number }>;
+
+  // v3 (baralho roguelike 5A — opcionais, retrocompatíveis)
+  cards?: Record<string, number>;
+  pendingCardPanels?: number | Array<'levelup' | 'bau_comum' | 'bau_chefe' | 'bau_lendario'>;
+  queenReviveUsed?: boolean;
+  // v3 (baralho roguelike 5B)
+  chitin?: number;
+  chests?: Array<{ id: number; x: number; y: number }>;
+  slotBonus?: Record<'especializacao' | 'comportamento' | 'passiva', number>;
+  bossesThisRun?: number;
 }
 
 export type RunSaveV3 = RunSaveV2 & Required<Pick<RunSaveV2, 'version'>>;
@@ -130,6 +150,9 @@ export function serialize(engine: GameEngine): RunSaveV2 {
       targetResId: a.targetResId, targetEnemyId: a.targetEnemyId,
       tx: Math.round(a.tx), ty: Math.round(a.ty), walkPhase: a.walkPhase, seed: a.seed,
       z: a.z, vx: a.vx, vy: a.vy, vz: a.vz,
+      angle: a.angle, wanderAngle: a.wanderAngle, wanderT: a.wanderT,
+      scoutA: a.scoutA, scoutR: a.scoutR,
+      tempT: a.tempT,
     })),
     resourceNodes: engine.resources.map((r) => ({
       id: r.id, kind: r.kind, x: Math.round(r.x), y: Math.round(r.y),
@@ -147,6 +170,13 @@ export function serialize(engine: GameEngine): RunSaveV2 {
     rebirths: engine.rebirths,
     ownedAnts: { ...engine.ownedAnts },
     respawnQueue: engine.respawnQueue.map((q) => ({ cls: q.cls, t: q.t })),
+    cards: { ...engine.cards },
+    pendingCardPanels: [...engine.pendingCardPanels],
+    queenReviveUsed: engine.queenReviveUsed,
+    chitin: engine.chitin,
+    chests: engine.chests.map((c) => ({ ...c })),
+    slotBonus: { ...engine.slotBonus },
+    bossesThisRun: engine.bossesThisRun,
   };
 }
 
@@ -199,21 +229,45 @@ export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
   engine.rebirths = save.rebirths ?? 0;
   engine.ownedAnts = { ...(save.ownedAnts ?? { worker: 0, soldier: 0, scout: 0 }) };
   engine.respawnQueue = (save.respawnQueue ?? []).map((q) => ({ cls: q.cls, t: q.t }));
-  engine.queen = { ...save.queen };
+  // baralho roguelike 5A+5B: restaura e recalcula os modificadores
+  engine.cards = { ...(save.cards ?? {}) };
+  engine.cardMods = cardModsFrom(engine.cards);
+  const pend = save.pendingCardPanels;
+  engine.pendingCardPanels = Array.isArray(pend) ? [...pend] : pend ? ['levelup'] : [];
+  engine.queenReviveUsed = save.queenReviveUsed ?? false;
+  engine.cardPanel = null;
+  engine.replaceDialog = null;
+  engine.chitin = save.chitin ?? 0;
+  engine.chests = (save.chests ?? []).map((c) => ({ ...c }));
+  engine.slotBonus = { ...(save.slotBonus ?? { especializacao: 0, comportamento: 0, passiva: 0 }) };
+  engine.bossesThisRun = save.bossesThisRun ?? 0;
+  engine.queen = {
+    ...save.queen,
+    hungerMax: save.queen.hungerMax ?? Math.round(100 * engine.cardMods.hungerMaxMult),
+    eggT: save.queen.eggT ?? 0,
+    satietyT: save.queen.satietyT ?? 0,
+  };
   engine.nestHp = save.nestHp;
   engine.wave = { ...save.wave };
   engine.timeSec = save.timeSec;
   engine.clock.runSeconds = save.runSeconds;
   engine.selectedAntId = save.selectedAntId;
 
-  // mundo: props/fauna regenerados pela seed fixa; nós de recurso restaurados
+  // mundo: props regenerados pela seed fixa; nós de recurso restaurados
   const world = generateWorld(save.mapId);
   engine.mapId = save.mapId;
   engine.w = world.w;
   engine.h = world.h;
   engine.props = world.props;
-  engine.enemies = world.ambientEnemies;
+  engine.enemies = [];
   engine.nest = { x: world.nestX, y: world.nestY, hp: save.nestHp, hpMax: engine.nestHpMax() };
+  // armadilhas de resina: posições fixas recalculadas se a carta estiver ativa
+  engine.traps = engine.cardMods.trapCdSec > 0
+    ? [0, 1, 2].map((i) => {
+        const ang = (i / 3) * Math.PI * 2 - Math.PI / 2;
+        return { x: world.nestX + Math.cos(ang) * 130, y: world.nestY + Math.sin(ang) * 130, cd: 0 };
+      })
+    : [];
   engine.resources = save.resourceNodes.map((r) => ({
     ...r, phase: r.phase ?? 0,
   }));
@@ -224,12 +278,27 @@ export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
   engine.camera.mode = save.camera.mode === 'free' ? 'free' : 'follow';
   engine.camera.clamp();
 
-  engine.ants = save.ants.map((a) => ({ ...a }));
+  engine.ants = save.ants.map((a) => ({
+    angle: a.wanderAngle ?? 0,
+    wanderAngle: a.wanderAngle ?? 0,
+    wanderT: a.wanderT ?? 0,
+    fearT: 0,
+    fearAx: 0,
+    fearAy: 0,
+    stunT: 0,
+    scoutA: a.scoutA ?? a.wanderAngle ?? 0,
+    scoutR: a.scoutR ?? 1,
+    scoutTx: a.x,
+    scoutTy: a.y,
+    scoutDecideT: 0,
+    ...a,
+  }));
   resumeAntIds(save.ants.reduce((m, a) => Math.max(m, a.id), 0));
   resumeEnemyIds(engine.enemies.reduce((m, e) => Math.max(m, e.id), 0));
 
   engine.rebuildResourceIndex();
   engine.recomputeFogActive();
   engine.exploredPct = Math.round(engine.fog.revealedFraction() * 100);
+  engine.computeFrontier();
   return true;
 }

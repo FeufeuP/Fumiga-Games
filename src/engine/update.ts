@@ -4,21 +4,24 @@
  * regeneração/reparo do ninho, XP/níveis, exploração e desbloqueio de mapas.
  */
 import {
-  ANT_RESPAWN, BOSS_SMASH, ENEMIES, ENGINE, MAPS, MAP_UNLOCK, NEST,
+  ANT_RESPAWN, BOSS_SMASH, ENEMIES, ENGINE, FOG, MAPS, MAP_UNLOCK, NEST,
   RESOURCE_REGEN, RALLY, WAVES, XP,
   levelFromXp, type EnemyKind, type MapId, type ResourceKind,
 } from '../core/constants';
-import { updateAnt, revealRadiusOf } from '../entities/ants';
+import { updateAnt } from '../entities/ants';
 import { createEnemy, createBoss, updateEnemy } from '../entities/enemies';
-import { updateQueen, nestRegen, nestRepair } from '../systems/queen';
+import { updateQueen, nestRegen, nestRepair, type QueenState } from '../systems/queen';
 import { applySeparation, clampToWorld } from './movement';
-import type { Ant, AntClass, AntWorld, Enemy, Toast } from '../core/types';
+import { antSpeed } from '../entities/ants';
+import type { Ant, AntClass, AntWorld, BuffWave, Dust, Enemy, Toast, WorldText } from '../core/types';
 
 export interface SimHost extends AntWorld {
   ants: Ant[];
   enemies: Enemy[];
-  damageAnt(antId: number, dmg: number, by: EnemyKind): void;
-  damageNest(dmg: number): void;
+  /** Provocação (carta 5B) — raio de taunt dos soldados (0 = off) */
+  readonly tauntRadius: number;
+  damageAnt(antId: number, dmg: number, by: EnemyKind, fromX?: number, fromY?: number): void;
+  damageNest(dmg: number, fromX?: number, fromY?: number): void;
   readonly boss: Enemy | null;
   readonly mapId: MapId;
   timeSec: number;
@@ -34,14 +37,20 @@ export interface SimHost extends AntWorld {
   exploredPct: number;
 
   // rainha / ninho
-  queen: { hunger: number; dead: boolean; feedT: number; warn30: boolean; warn10: boolean };
+  queen: QueenState;
   nestHp: number;
+  /** HP máximo do ninho (upgrades + cartas) */
+  nestHpMax(): number;
+  /** concede recurso respeitando o teto da Despensa (carta 5A) */
+  grantResource(kind: ResourceKind, n: number): void;
+  /** adiciona XP já com o bônus de eficiência das cartas (5A) */
+  addXp(n: number): void;
 
   spawnAnt(cls: AntClass): void;
   spawnWaveEnemy(power?: number): void;
   spawnBoss(): void;
   pushToast(text: string, kind: Toast['kind']): void;
-  onLevelUp(level: number): void;
+  onLevelUp(level: number, gained: number): void;
   onQueenDead(): void;
   onBossDefeated(e: Enemy): void;
   onMapUnlocked(mapId: MapId): void;
@@ -61,6 +70,26 @@ export interface SimHost extends AntWorld {
   bossThrowT: number;
   smashFx: Array<{ x: number; y: number; t: number }>;
   shake: number;
+  /** anel de fronteira da exploração [O] */
+  frontierR: number;
+  frontierT: number;
+  /** efeitos visíveis (textos, poeira, ondas) — como toasts */
+  worldTexts: WorldText[];
+  dust: Dust[];
+  buffWaves: BuffWave[];
+  /** [P 5B] timers dos comportamentos (enxame/chuva/investida/guardas) */
+  cardTimers: { swarmT: number; acidT: number; chargeT: number; guardCd: number };
+  /** [P 5B] armadilhas de resina ao redor do ninho */
+  traps: Array<{ x: number; y: number; cd: number }>;
+  /** [P 5B] baús no mapa (abertos ao serem revelados) */
+  chests: ReadonlyArray<{ id: number; x: number; y: number }>;
+  onChestFound?(chest: { id: number; x: number; y: number }): void;
+  /** [P 5B] produção de ovos da Rainha (cartas de produção ativas) */
+  updateQueenProduction?(dt: number): void;
+  /** [P 5B] chance de baú novo ao repelir onda (chamado no waveReward) */
+  onWaveCleared?(): void;
+  /** marcas de toque [O] */
+  tapMarks: Array<{ x: number; y: number; t: number; color: string }>;
   /** regeneração de recursos */
   regenT: number;
   maxRes: Partial<Record<ResourceKind, number>>;
@@ -88,11 +117,38 @@ export function stepSimulation(host: SimHost, dt: number): void {
   updateBossTimers(host, dt);
   updateRespawnQueue(host, dt);
   updateResourceRegen(host, dt);
+  updateFrontier(host, dt);
+  for (const m of host.tapMarks) m.t -= dt;
+  if (host.tapMarks.some((m) => m.t <= 0)) {
+    host.tapMarks = host.tapMarks.filter((m) => m.t > 0);
+  }
   for (const f of host.smashFx) f.t -= dt;
   if (host.smashFx.some((f) => f.t <= 0)) {
     host.smashFx = host.smashFx.filter((f) => f.t > 0);
   }
   host.shake = Math.max(0, host.shake - dt * 1.6);
+
+  // ── efeitos visíveis: brilho, poeira, ondas, textos ──────────────
+  for (const a of host.ants) {
+    if (a.glowT && a.glowT > 0) a.glowT = Math.max(0, a.glowT - dt);
+  }
+  for (const t of host.worldTexts) t.t -= dt;
+  if (host.worldTexts.some((t) => t.t <= 0)) {
+    host.worldTexts = host.worldTexts.filter((t) => t.t > 0);
+  }
+  for (const d of host.dust) d.t -= dt;
+  if (host.dust.some((d) => d.t <= 0)) {
+    host.dust = host.dust.filter((d) => d.t > 0);
+  }
+  for (const w of host.buffWaves) {
+    w.t -= dt;
+    w.r = w.maxR * (1 - w.t / w.tMax);
+  }
+  if (host.buffWaves.some((w) => w.t <= 0)) {
+    host.buffWaves = host.buffWaves.filter((w) => w.t > 0);
+  }
+  // trilha de poeira: quanto mais rápida, mais poeira (velocidade VISÍVEL)
+  spawnSpeedDust(host, dt);
 
   // ── inimigos (morta a formiga, sai da lista) ─────────────────────
   for (const e of host.enemies) {
@@ -113,8 +169,13 @@ export function stepSimulation(host: SimHost, dt: number): void {
     host.ants = host.ants.filter((a) => a.hp > 0);
   }
 
-  // ── névoa ────────────────────────────────────────────────────────
-  for (const a of host.ants) host.fog.reveal(a.x, a.y, revealRadiusOf(a.cls));
+  // ── névoa: SÓ a exploradora revela (fogCell×2) [O] ───────────────
+  for (const a of host.ants) {
+    if (a.cls === 'scout') {
+      // Olhos largos (carta 5B): +px de raio de revelação
+      host.fog.reveal(a.x, a.y, FOG.SCOUT_RADIUS + host.cardMods.scoutRevealBonus);
+    }
+  }
   if (host.tick % Math.max(1, Math.round(60 / ENGINE.FOG_ACTIVE_HZ)) === 0) {
     host.recomputeFogActive();
     host.rebuildResourceIndex();
@@ -132,25 +193,41 @@ export function stepSimulation(host: SimHost, dt: number): void {
         }
         return null;
       },
-      workerCount: () => host.ants.filter((a) => a.cls === 'worker' && a.hp > 0).length,
+      workerCount: () => host.ownedAnts.worker,
       toast: (text, kind) => host.pushToast(text, kind),
       onQueenDead: () => host.onQueenDead(),
-    }, dt);
+    }, dt, {
+      drainMult: host.cardMods.hungerDrainMult,       // Apetite contido
+      perItemBonus: host.cardMods.hungerPerItemBonus, // Porção reforçada
+      satietySec: host.cardMods.satietySec,           // Saciedade duradoura (5B)
+    });
+    // [P 5B] ovos da Rainha (Postura acelerada / Ninhada dupla / Coração dourado)
+    host.updateQueenProduction?.(dt);
 
     // ── ninho: regen fora de combate ou reparo em ruína ────────────
+    // (Reparo rápido acelera os dois; Fortaleza viva regenera sozinha)
+    const cm = host.cardMods;
     const enemyNear = host.enemies.some(
-      (e) => Math.hypot(e.x - host.nest.x, e.y - host.nest.y) < NEST.REGEN_ENEMY_RADIUS,
+      (e) =>
+        host.fog.isRevealed(e.x, e.y) &&
+        Math.hypot(e.x - host.nest.x, e.y - host.nest.y) < NEST.REGEN_ENEMY_RADIUS,
     );
+    const hpMax = host.nestHpMax();
     if (host.nestHp > 0) {
-      host.nestHp = nestRegen(host.nestHp, NEST.HP_MAX, enemyNear, dt);
+      // Engenheiras (carta 5B): regenera mesmo com inimigo por perto
+      const bloqueada = enemyNear && !cm.repairInCombat;
+      host.nestHp = nestRegen(host.nestHp, hpMax, bloqueada, dt * cm.repairMult);
+      // Fortaleza viva (carta 5A): regen extra fora de combate
+      if (!enemyNear && host.nestHp > 0 && host.nestHp < hpMax && cm.nestRegenBonus > 0) {
+        host.nestHp = Math.min(hpMax, host.nestHp + cm.nestRegenBonus * dt);
+      }
     } else {
       const workers = host.ants.filter((a) => a.cls === 'worker' && a.hp > 0).length;
-      const r = nestRepair(host.nestHp, NEST.HP_MAX, workers, dt);
+      // Mãos hábeis (carta 5B): +HP/s flat no reparo em ruína
+      const r = nestRepair(host.nestHp, hpMax, workers, dt * cm.repairMult);
+      host.nestHp = Math.min(hpMax, r.hp + cm.repairHpPerSec * dt);
       if (r.rebuilt) {
-        host.nestHp = r.hp;
         host.pushToast('O formigueiro foi reconstruído pelas operárias!', 'success');
-      } else {
-        host.nestHp = r.hp;
       }
     }
   }
@@ -158,18 +235,71 @@ export function stepSimulation(host: SimHost, dt: number): void {
   // ── XP / nível ───────────────────────────────────────────────────
   const lv = levelFromXp(host.xp);
   if (lv > host.level) {
+    const gained = lv - host.level;
     host.level = lv;
-    host.onLevelUp(lv);
+    host.onLevelUp(lv, gained);
   }
 
   // ── exploração (0,5s) e desbloqueio ─────────────────────────────
   if (host.tick % 30 === 0) {
+    const antes = host.exploredPct;
     host.exploredPct = Math.round(host.fog.revealedFraction() * 100);
+    // Vanguarda (carta 5B): XP por área nova revelada
+    const delta = host.exploredPct - antes;
+    if (delta > 0 && host.cardMods.xpPerNewAreaPct > 0) {
+      host.addXp(delta * host.cardMods.xpPerNewAreaPct);
+    }
     const unlock = MAP_UNLOCK[host.mapId];
     if (unlock && host.exploredPct >= unlock.pct) {
       host.onMapUnlocked(unlock.next);
     }
   }
+
+  // ── Colônia unida (carta 5B): recalcula quem tem aliado ≤80px ────
+  if (host.tick % 15 === 0) {
+    const ants = host.ants;
+    for (const a of ants) {
+      a.nearAlly = false;
+      for (const b of ants) {
+        if (b === a || b.hp <= 0) continue;
+        if (Math.hypot(a.x - b.x, a.y - b.y) <= 80) { a.nearAlly = true; break; }
+      }
+    }
+  }
+
+  // ── guardas temporários (Muralha de defensores) expiram ──────────
+  if (host.ants.some((a) => a.tempT !== undefined)) {
+    for (const a of host.ants) {
+      if (a.tempT !== undefined) a.tempT -= dt;
+    }
+    host.ants = host.ants.filter((a) => a.tempT === undefined || a.tempT > 0);
+  }
+
+  // ── baús: revelados pela exploradora são coletados ───────────────
+  if (host.chests.length > 0) {
+    for (const c of host.chests) {
+      if (host.fog.isRevealed(c.x, c.y)) host.onChestFound?.(c);
+    }
+  }
+
+  // ── armadilhas de resina (carta 5B) ──────────────────────────────
+  if (host.cardMods.trapCdSec > 0) {
+    for (const trap of host.traps) {
+      if (trap.cd > 0) { trap.cd -= dt; continue; }
+      for (const e of host.enemies) {
+        if (e.hp <= 0 || (e.rootT ?? 0) > 0) continue;
+        if (Math.hypot(e.x - trap.x, e.y - trap.y) <= 30) {
+          e.rootT = 2; // preso por 2s
+          trap.cd = host.cardMods.trapCdSec;
+          host.worldTexts.push({ x: trap.x, y: trap.y - 20, text: '🪤', color: '251,208,70', t: 1.2, tMax: 1.2 });
+          break;
+        }
+      }
+    }
+  }
+
+  // ── comportamentos periódicos (cartas 5B) ────────────────────────
+  updateCardBehaviors(host, dt);
 
   // ── toasts ───────────────────────────────────────────────────────
   for (const t of host.toasts) t.tSec -= dt;
@@ -225,16 +355,45 @@ function updateWaves(host: SimHost, dt: number): void {
 function waveReward(host: SimHost): void {
   const n = host.wave.num;
   const leaves = WAVES.REWARD_LEAVES(n);
-  host.wallet.leaf = (host.wallet.leaf ?? 0) + leaves;
-  host.xp += XP.WAVE_REWARD_BASE + XP.WAVE_REWARD_PER * n;
-  const heal = Math.round(NEST.HP_MAX * WAVES.NEST_HEAL_FRAC);
+  host.grantResource('leaf', leaves);
+  host.addXp(XP.WAVE_REWARD_BASE + XP.WAVE_REWARD_PER * n);
+  const hpMax = host.nestHpMax();
+  const heal = Math.round(hpMax * WAVES.NEST_HEAL_FRAC);
   const before = host.nestHp;
-  host.nestHp = Math.min(NEST.HP_MAX, host.nestHp + heal);
+  host.nestHp = Math.min(hpMax, host.nestHp + heal);
   const healed = Math.round(host.nestHp - before);
+  if (healed > 0) {
+    host.worldTexts.push({
+      x: host.nest.x, y: host.nest.y - 46, text: `+${healed} HP`,
+      color: '85,184,75', t: 1.6, tMax: 1.6,
+    });
+  }
   host.pushToast(
     `Onda repelida! +${leaves} folhas${healed > 0 ? ` e o ninho recuperou ${healed} de vida` : ''}.`,
     'success',
   );
+  host.onWaveCleared?.();
+}
+
+/** Poeira atrás de formigas em movimento rápido — torna +velocidade visível. */
+const MOVING_STATES = new Set(['gotoResource', 'returnNest', 'explore', 'patrol', 'seekEnemy', 'command', 'returnHome', 'flee']);
+
+function spawnSpeedDust(host: SimHost, dt: number): void {
+  // limiar 92 px/s: base (82) não solta poeira; bônus fazem soltar
+  for (const a of host.ants) {
+    if (!MOVING_STATES.has(a.state) || a.z > 0) continue;
+    const v = antSpeed(a, host);
+    if (v <= 92) continue;
+    const rate = Math.min(0.6, (v - 92) / 220); // chance por passo
+    if (host.rng.next() < rate * dt * 60) {
+      host.dust.push({
+        x: a.x - Math.cos(a.angle) * 9 + (host.rng.next() - 0.5) * 5,
+        y: a.y + 5 + (host.rng.next() - 0.5) * 3,
+        t: 0.55, tMax: 0.55,
+      });
+      if (host.dust.length > 220) host.dust.shift();
+    }
+  }
 }
 
 /** [O] spawn na sombra: procura célula de névoa não revelada num anel */
@@ -274,14 +433,40 @@ export function pickWaveKind(host: SimHost, rng: { next(): number }): EnemyKind 
 export function makeWaveEnemy(host: SimHost, power?: number): Enemy {
   const kind = pickWaveKind(host, host.rng);
   const p = power ?? WAVES.POWER(host.wave.num);
-  const spot = randomShadowSpawn(host, host.rng) ?? { x: host.w / 2, y: 60 };
-  return createEnemy(kind, spot.x, spot.y, p, () => host.rng.next(), { wave: true });
+  const h = ENEMIES[kind].r * p;
+  const spot = randomShadowSpawn(host, host.rng);
+  let x: number;
+  let y: number;
+  if (spot) {
+    x = spot.x + (host.rng.next() - 0.5) * FOG.CELL;
+    y = spot.y + (host.rng.next() - 0.5) * FOG.CELL;
+  } else {
+    // [O] sem sombra: nasce fora de uma borda aleatória
+    const side = Math.floor(host.rng.next() * 4);
+    const pad = h + WAVES.EDGE_SPAWN_PAD;
+    if (side === 0) { x = -pad; y = host.rng.next() * host.h; }
+    else if (side === 1) { x = host.w + pad; y = host.rng.next() * host.h; }
+    else if (side === 2) { x = host.rng.next() * host.w; y = -pad; }
+    else { x = host.rng.next() * host.w; y = host.h + pad; }
+  }
+  return createEnemy(kind, x, y, p, () => host.rng.next(), { wave: true });
 }
 
 export function makeBoss(host: SimHost): Enemy {
   const cfg = MAPS[host.mapId].boss;
-  const spot = randomShadowSpawn(host, host.rng) ?? { x: host.w / 2, y: 60 };
-  const e = createBoss(cfg.kind, cfg.name, spot.x, spot.y, cfg, () => host.rng.next());
+  // [O] chefe nasce em ponto livre: ≥240 das bordas, ≥720 do ninho
+  let x = host.w / 2;
+  let y = 60;
+  for (let t = 0; t < 80; t++) {
+    const cx = 240 + host.rng.next() * (host.w - 480);
+    const cy = 240 + host.rng.next() * (host.h - 480);
+    if (Math.hypot(cx - host.nest.x, cy - host.nest.y) < 720) continue;
+    if (host.props.some((p) => p.solid && Math.hypot(cx - p.x, cy - p.y) < p.r + cfg.r + 24)) continue;
+    x = cx;
+    y = cy;
+    break;
+  }
+  const e = createBoss(cfg.kind, cfg.name, x, y, cfg, () => host.rng.next());
   host.pushToast(`CHEFE: ${cfg.name} apareceu na onda ${host.wave.num}!`, 'danger');
   return e;
 }
@@ -299,6 +484,10 @@ function updateAntFlight(host: SimHost, dt: number): void {
     a.y += a.vy * dt;
     a.z += a.vz * dt;
     a.vz -= G * dt;
+    // [O] arrasto horizontal no ar
+    const drag = Math.max(0, 1 - 1.6 * dt);
+    a.vx *= drag;
+    a.vy *= drag;
     a.walkPhase += 12 * dt; // patas pedalando no ar
     if (a.x < 8) { a.x = 8; a.vx = Math.abs(a.vx); }
     if (a.y < 8) { a.y = 8; a.vy = Math.abs(a.vy); }
@@ -306,11 +495,36 @@ function updateAntFlight(host: SimHost, dt: number): void {
     if (a.y > host.h - 8) { a.y = host.h - 8; a.vy = -Math.abs(a.vy); }
     if (a.z <= 0) {
       a.z = 0; a.vx = 0; a.vy = 0; a.vz = 0;
+      a.stunT = 0.9; // [O] atordoa ao aterrissar
       a.state = 'idle';
       a.targetResId = null;
       a.targetEnemyId = null;
     }
   }
+}
+
+/** [O computeFrontier] anel cresce 1 célula quando o anel atual está revelado. */
+function updateFrontier(host: SimHost, dt: number): void {
+  host.frontierT -= dt;
+  if (host.frontierT > 0) return;
+  host.frontierT = 0.6;
+  const cell = host.fog.cell;
+  const maxR = Math.hypot(
+    Math.max(host.nest.x, host.w - host.nest.x),
+    Math.max(host.nest.y, host.h - host.nest.y),
+  );
+  if (host.frontierR >= maxR) return;
+  // anel revelado? 18 amostras ao redor
+  const r = host.frontierR;
+  let revealed = true;
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2;
+    if (!host.fog.isRevealed(host.nest.x + Math.cos(a) * r, host.nest.y + Math.sin(a) * r)) {
+      revealed = false;
+      break;
+    }
+  }
+  if (revealed) host.frontierR = Math.min(host.frontierR + cell, maxR);
 }
 
 /** Rally: decai buffs e cooldowns. */
@@ -337,10 +551,11 @@ function updateBossTimers(host: SimHost, dt: number): void {
 /** [O] bossSmash: dano + arremesso em área de 90px. */
 function bossSmash(host: SimHost, boss: Enemy): void {
   host.shake = Math.max(host.shake, 1);
+  host.playSfx('smash');
   host.smashFx.push({ x: boss.x, y: boss.y, t: BOSS_SMASH.RING_SEC });
   for (const a of host.ants) {
     if (Math.hypot(a.x - boss.x, a.y - boss.y) > BOSS_SMASH.RADIUS) continue;
-    host.damageAnt(a.id, boss.dmg, boss.kind);
+    host.damageAnt(a.id, boss.dmg, boss.kind, boss.x, boss.y);
     if (a.hp <= 0) continue; // morreu com o golpe
     const dx = a.x - boss.x;
     const dy = a.y - boss.y;
@@ -402,3 +617,88 @@ export function soldierAttackCdMult(host: SimHost): number {
   return host.rally.attackBuffT > 0 ? RALLY.ATTACK_SPEED_MULT : 1;
 }
 
+
+
+// ═════════════════════ COMPORTAMENTOS DAS CARTAS ═══════════════════
+
+/** Enxame de mordidas · Chuva de ácido · Investida gigante (cartas 5B). */
+function updateCardBehaviors(host: SimHost, dt: number): void {
+  const cm = host.cardMods;
+  const t = host.cardTimers;
+
+  // Enxame de mordidas: a cada 8s, formigas ≤240px de um inimigo mordem juntas
+  if (cm.swarmBiteDmg > 0) {
+    t.swarmT -= dt;
+    if (t.swarmT <= 0) {
+      t.swarmT = 8;
+      for (const e of host.enemies) {
+        if (e.hp <= 0) continue;
+        let mordidas = 0;
+        for (const a of host.ants) {
+          if (a.hp <= 0) continue;
+          if (Math.hypot(a.x - e.x, a.y - e.y) <= 240) {
+            mordidas++;
+            a.targetEnemyId = e.id; // coordena o ataque
+          }
+        }
+        if (mordidas > 0) {
+          const dano = mordidas * cm.swarmBiteDmg;
+          host.damageEnemy(e, dano, 'soldier');
+          host.worldTexts.push({
+            x: e.x, y: e.y - e.scale * 0.55 - 14,
+            text: `🐝 -${Math.round(dano)}`, color: '240,101,92', t: 1.2, tMax: 1.2,
+          });
+        }
+      }
+    }
+  }
+
+  // Chuva de ácido: a cada 20s, cai no maior grupo de inimigos
+  if (cm.acidRainDmg > 0) {
+    t.acidT -= dt;
+    if (t.acidT <= 0) {
+      t.acidT = 20;
+      let alvo: Enemy | null = null;
+      let melhor = 0;
+      for (const e of host.enemies) {
+        if (e.hp <= 0) continue;
+        let vizinhos = 0;
+        for (const o of host.enemies) {
+          if (o.hp > 0 && Math.hypot(o.x - e.x, o.y - e.y) <= 130) vizinhos++;
+        }
+        if (vizinhos > melhor) { melhor = vizinhos; alvo = e; }
+      }
+      if (alvo) {
+        host.buffWaves.push({ x: alvo.x, y: alvo.y, r: 0, maxR: 140, color: '151,200,90', t: 0.8, tMax: 0.8 });
+        for (const e of host.enemies) {
+          if (e.hp > 0 && Math.hypot(e.x - alvo.x, e.y - alvo.y) <= 130) {
+            host.damageEnemy(e, cm.acidRainDmg, 'soldier');
+          }
+        }
+        host.pushToast('🌧️ Chuva de ácido!', 'info');
+      }
+    }
+  }
+
+  // Investida gigante: a cada 30s, onda do ninho atinge a linha de frente
+  if (cm.giantChargeDmg > 0) {
+    t.chargeT -= dt;
+    if (t.chargeT <= 0) {
+      t.chargeT = 30;
+      let acertou = false;
+      for (const e of host.enemies) {
+        if (e.hp <= 0) continue;
+        if (Math.hypot(e.x - host.nest.x, e.y - host.nest.y) <= 260) {
+          host.damageEnemy(e, cm.giantChargeDmg, 'soldier');
+          e.rootT = 1; // atordoado
+          acertou = true;
+        }
+      }
+      if (acertou) {
+        host.buffWaves.push({ x: host.nest.x, y: host.nest.y, r: 0, maxR: 280, color: '220,170,110', t: 1, tMax: 1 });
+        host.shake = Math.max(host.shake, 0.8);
+        host.pushToast('🦏 Investida gigante!', 'info');
+      }
+    }
+  }
+}

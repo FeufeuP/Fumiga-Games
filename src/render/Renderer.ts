@@ -84,10 +84,141 @@ export class Renderer {
     };
 
     this.drawGround(ctx, scene, view);
+    this.drawPheromoneZone(ctx, scene);
+    this.drawTraps(ctx, scene);
+    this.drawChests(ctx, scene, view);
     this.drawSorted(ctx, scene, view);
+    this.drawDust(ctx, scene);
     this.drawSmashFx(ctx, scene);
+    this.drawTapMarks(ctx, scene);
+    this.drawBuffWaves(ctx, scene);
     this.drawFog(ctx, scene, view);
+    this.drawWorldTexts(ctx, scene);
     this.drawClouds(ctx);
+  }
+
+  /** [O tapMarks] anel do comando CHAMAR (toque/toque duplo) */
+  private drawTapMarks(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    for (const m of scene.tapMarks) {
+      const k = 1 - m.t / 0.45;
+      ctx.strokeStyle = `rgba(${m.color}, ${(0.9 * (1 - k)).toFixed(3)})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 14 + k * 26, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${m.color}, ${(0.8 * (1 - k)).toFixed(3)})`;
+      ctx.fill();
+    }
+  }
+
+  /** [P 5B] Nuvem de feromônio: zona translúcida ao redor do ninho */
+  private drawPheromoneZone(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    if (!scene.pheromoneZone) return;
+    const t = performance.now() / 1000;
+    const r = 190 + Math.sin(t * 1.5) * 6;
+    const grad = ctx.createRadialGradient(scene.nest.x, scene.nest.y, 40, scene.nest.x, scene.nest.y, r);
+    grad.addColorStop(0, 'rgba(107,221,112,0.02)');
+    grad.addColorStop(1, 'rgba(107,221,112,0.16)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(scene.nest.x, scene.nest.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(107,221,112,0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(scene.nest.x, scene.nest.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  /** [P 5B] Armadilhas de resina: poços que prendem inimigos */
+  private drawTraps(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    for (const t of scene.traps) {
+      const pronto = t.cd <= 0;
+      const r = pronto ? 13 : 9;
+      ctx.fillStyle = pronto ? 'rgba(233,101,32,0.55)' : 'rgba(233,101,32,0.18)';
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = pronto ? 'rgba(251,208,70,0.8)' : 'rgba(251,208,70,0.3)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (pronto) {
+        ctx.fillStyle = 'rgba(251,208,70,0.9)';
+        ctx.font = '10px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('🪤', t.x, t.y + 3);
+      }
+    }
+  }
+
+  /** [P 5B] Baús de exploração no mundo */
+  private drawChests(ctx: CanvasRenderingContext2D, scene: Scene, view: View): void {
+    for (const c of scene.chests) {
+      if (c.x < view.left - 40 || c.x > view.right + 40 || c.y < view.top - 40 || c.y > view.bottom + 40) continue;
+      const bob = Math.sin(scene.timeSec * 2.5 + c.id) * 3;
+      // brilho de tesouro
+      const grad = ctx.createRadialGradient(c.x, c.y + bob, 4, c.x, c.y + bob, 26);
+      grad.addColorStop(0, 'rgba(251,208,70,0.35)');
+      grad.addColorStop(1, 'rgba(251,208,70,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y + bob, 26, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = '22px "Courier New", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🎁', c.x, c.y + bob);
+    }
+  }
+
+  /** poeira das formigas rápidas — velocidade VISÍVEL */
+  private drawDust(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    for (const d of scene.dust) {
+      const k = d.t / d.tMax;
+      ctx.fillStyle = `rgba(196, 178, 148, ${(0.5 * k).toFixed(3)})`;
+      const sz = 2 + (1 - k) * 2;
+      ctx.fillRect(Math.round(d.x - sz / 2), Math.round(d.y - sz / 2), sz, sz);
+    }
+  }
+
+  /** onda de buff: anel colorido que sai do ninho ao comprar/evoluir */
+  private drawBuffWaves(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    for (const w of scene.buffWaves) {
+      const k = w.t / w.tMax;
+      ctx.strokeStyle = `rgba(${w.color}, ${(0.85 * k).toFixed(3)})`;
+      ctx.lineWidth = 2 + 4 * k;
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
+      ctx.stroke();
+      // faísca no centro
+      ctx.fillStyle = `rgba(${w.color}, ${(0.4 * k).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, 10 * k, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /** textos flutuantes: dano, XP, recursos, cura (world-space) */
+  private drawWorldTexts(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const t of scene.worldTexts) {
+      const k = t.t / t.tMax;              // 1 → 0
+      const sobe = (1 - k) * 26;           // flutua para cima
+      const alpha = Math.min(1, k * 2.2);  // some no fim
+      ctx.font = 'bold 13px "Courier New", monospace';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = `rgba(20,18,15, ${alpha.toFixed(3)})`;
+      ctx.fillStyle = `rgba(${t.color}, ${alpha.toFixed(3)})`;
+      const x = Math.round(t.x);
+      const y = Math.round(t.y - sobe);
+      ctx.strokeText(t.text, x, y);
+      ctx.fillText(t.text, x, y);
+    }
   }
 
   /** [O] anel do smash do chefe */
@@ -278,6 +409,18 @@ export class Renderer {
   private drawAntEntity(ctx: CanvasRenderingContext2D, a: Ant, selected: boolean): void {
     const s = this.sprites;
     if (!s) return;
+    // brilho de buff recente (compra na loja / carta) — melhoria VISÍVEL
+    if (a.glowT && a.glowT > 0 && a.glowColor) {
+      const k = Math.min(1, a.glowT / 2.5);
+      const r = 16 + 4 * Math.sin(a.glowT * 9);
+      const grad = ctx.createRadialGradient(a.x, a.y, 2, a.x, a.y, r);
+      grad.addColorStop(0, `rgba(${a.glowColor}, ${(0.55 * k).toFixed(3)})`);
+      grad.addColorStop(1, `rgba(${a.glowColor}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
     if (selected) {
       ctx.strokeStyle = '#fbd046';
       ctx.lineWidth = 2;

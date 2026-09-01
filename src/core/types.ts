@@ -6,14 +6,39 @@ import type { AntClass, EnemyKind, MapId, ResourceKind, UpgradeDef } from './con
 import type { Rng } from './rng';
 import type { EventBus } from './events';
 import type { FogOfWar } from '../engine/fogOfWar';
+import type { CardMods } from '../roguelike/modifiers';
+import type { CartaPainel } from '../roguelike/cardPool';
 
 export type { AntClass, EnemyKind, MapId, ResourceKind, UpgradeDef };
 
 export interface Vec2 { x: number; y: number }
 
+/** ── efeitos visíveis no mundo (melhorias percebíveis) ───────────── */
+/** texto flutuante: dano, XP, recursos, cura */
+export interface WorldText {
+  x: number; y: number;
+  text: string;
+  color: string;      // rgb "r,g,b"
+  t: number;          // tempo restante (s)
+  tMax: number;
+}
+/** poeira atrás de formigas rápidas (trilha ∝ velocidade) */
+export interface Dust {
+  x: number; y: number;
+  t: number; tMax: number;
+}
+/** onda de buff: anel que sai do ninho ao comprar/evoluir */
+export interface BuffWave {
+  x: number; y: number;
+  r: number; maxR: number;
+  color: string;      // rgb "r,g,b"
+  t: number; tMax: number;
+}
+
 export type AntState =
   | 'idle' | 'gotoResource' | 'harvest' | 'returnNest'
-  | 'explore' | 'patrol' | 'seekEnemy' | 'attack' | 'returnHome';
+  | 'explore' | 'patrol' | 'seekEnemy' | 'attack' | 'returnHome'
+  | 'command' | 'flee';
 
 export interface Ant {
   id: number;
@@ -38,6 +63,26 @@ export interface Ant {
   vx: number;             // impulso horizontal do knockback
   vy: number;
   vz: number;
+  // ── IA fiel [O]: direção/medo/comando ──────────────────────────
+  angle: number;          // rumo atual (rad)
+  wanderAngle: number;    // vagueio: ângulo alvo
+  wanderT: number;        // vagueio: tempo até próxima decisão
+  fearT: number;          // fugindo (0.9s após dano, não-soldados)
+  fearAx: number;         // direção da fuga
+  fearAy: number;
+  stunT: number;          // atordoado ao aterrissar do smash (0.9s)
+  scoutA: number;         // exploradora: ângulo no anel de fronteira
+  scoutR: number;         // exploradora: multiplicador do raio de fronteira
+  scoutTx: number;        // exploradora: alvo atual
+  scoutTy: number;
+  scoutDecideT: number;   // exploradora: tempo até repensar alvo
+  /** brilho temporário (onda de buff) — undefined = sem brilho */
+  glowT?: number;
+  glowColor?: string;     // rgb "r,g,b"
+  /** [P 5B] guarda temporário (Muralha de defensores): sai ao zerar */
+  tempT?: number;
+  /** [P 5B] Colônia unida: tem aliado a ≤80px (recalculado) */
+  nearAlly?: boolean;
 }
 
 export type EnemyState = 'wander' | 'chase' | 'attack';
@@ -65,6 +110,10 @@ export interface Enemy {
   attackCd: number;
   walkPhase: number;
   seed: number;
+  angle: number;          // rumo atual (rad) [O]
+  patrolT: number;        // vagueio ambiente [O]
+  /** [P 5B] preso em armadilha de resina — não anda nem ataca */
+  rootT?: number;
 }
 
 export interface ResourceNode {
@@ -129,29 +178,53 @@ export interface Scene {
   /** efeitos do ciclo A [O] */
   readonly smashFx: ReadonlyArray<{ x: number; y: number; t: number }>;
   readonly shake: number;
+  /** marcas de toque: comandos CHAMAR EXPLORADORAS/SOLDADOS [O] */
+  readonly tapMarks: ReadonlyArray<{ x: number; y: number; t: number; color: string }>;
+  /** efeitos visíveis: textos flutuantes, poeira e ondas de buff */
+  readonly worldTexts: ReadonlyArray<WorldText>;
+  readonly dust: ReadonlyArray<Dust>;
+  readonly buffWaves: ReadonlyArray<BuffWave>;
+  /** [P 5B] baús de exploração e armadilhas de resina */
+  readonly chests: ReadonlyArray<{ id: number; x: number; y: number }>;
+  readonly traps: ReadonlyArray<{ x: number; y: number; cd: number }>;
+  /** zona de feromônio ativa? (raio 190 do ninho) */
+  readonly pheromoneZone: boolean;
 }
 
 /** Contrato entre motor e comportamentos (testável com mock). */
 export interface AntWorld {
   readonly w: number;
   readonly h: number;
-  readonly nest: { x: number; y: number };
+  readonly nest: { x: number; y: number; hp?: number; hpMax?: number };
+  readonly ants: readonly Ant[];
+  readonly props: readonly Prop[];
   enemies: readonly Enemy[];
   readonly resources: readonly ResourceNode[];
   readonly fog: FogOfWar;
   readonly rng: Rng;
   readonly events: EventBus;
+  /** raio do anel de fronteira explorado [O computeFrontier] */
+  readonly frontierR: number;
   /** multiplicadores derivados das melhorias compradas */
   readonly mods: AntMods;
+  /** modificadores das cartas roguelike (5A — modifiers.ts) */
+  readonly cardMods: CardMods;
   /** buffs momentâneos do rally [O] */
   readonly buffs: { collectSpeedMult: number; attackCdMult: number };
 
   takeResource(kind: ResourceKind, n: number): boolean;
   deposit(units: number, kind: ResourceKind, by: AntClass): void;
   nearestRevealedResource(x: number, y: number, maxDist: number): ResourceNode | null;
+  /** [O nearestEnemyBody] inimigo revelado mais próximo (distância ao corpo) */
   nearestVisibleEnemy(x: number, y: number, maxDist: number): Enemy | null;
-  damageEnemy(e: Enemy, dmg: number, by: AntClass): void;
+  /** [O enemyExtent] extensão (raio de corpo) do inimigo */
+  enemyExtent(e: Enemy): number;
+  /** [O pickup] remove o nó de recurso do mapa */
+  removeResource(id: number): void;
+  damageEnemy(e: Enemy, dmg: number, by: AntClass, crit?: boolean): void;
   antCount(cls: AntClass): number;
+  /** efeitos sonoros (motor de áudio) */
+  playSfx(name: string): void;
 }
 
 /** Multiplicadores aplicados às formigas (loja). */
@@ -215,4 +288,14 @@ export interface HudState {
   achievements: { done: number; total: number; progress: Array<{ id: string; title: string; desc: string; value: number; goal: number; done: boolean }> };
   rebirths: number;
   score: number;
+  /** painel de level-up/baú do baralho roguelike — aberto congela o mundo */
+  cardPanel: { level: number; origem?: string; choices: CartaPainel[] } | null;
+  /** quitina (moeda das classes futuras) */
+  chitin: number;
+  /** cartas da build (aba CARTAS do pause) */
+  cards: Array<{ id: string; nome: string; icone: string; raridade: string; nivel: number; nivelMax: number; categoria: string; eixo: string }>;
+  /** uso de slots por categoria */
+  slots: Record<string, { usados: number; teto: number }>;
+  /** substituição pendente (slot cheio) */
+  replaceDialog: { novaId: string; opcoes: Array<{ id: string; nome: string; icone: string; nivel: number; nivelMax: number }> } | null;
 }

@@ -1,4 +1,6 @@
-/* Menu principal — fundo original com vinheta terrosa. */
+/* Menu principal — fiel ao original [O]: coluna JOGAR/OPCOES/CREDITOS,
+   grid CONQUISTAS/ESTATISTICAS/PLACAR, SAIR danger, badge V1.5. */
+
 .screen {
   position: fixed;
   inset: 0;
@@ -7,6 +9,7 @@
   align-items: center;
   justify-content: center;
   z-index: 30;
+  overflow: hidden;
 }
 
 .dim {
@@ -15,24 +18,20 @@
   background: radial-gradient(ellipse at 50% 40%, rgba(20, 18, 15, 0.1), rgba(20, 18, 15, 0.72));
 }
 
-.soundBtn {
+.badge {
   position: absolute;
   top: 14px;
   right: 14px;
-  width: 46px;
-  height: 46px;
-  padding: 6px;
-  background: rgba(20, 18, 15, 0.55);
+  padding: 6px 12px;
+  font-family: "'Courier New', monospace";
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--c-dourado);
+  background: rgba(20, 18, 15, 0.7);
   border: 2px solid var(--c-terra-clara);
-  border-radius: 10px;
+  border-radius: 8px;
   z-index: 2;
-}
-
-.soundBtn img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  image-rendering: pixelated;
 }
 
 .stack {
@@ -41,12 +40,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 24px;
   text-align: center;
+  font-family: "'Courier New', monospace";
 }
 
 .title {
+  margin: 0;
   font-size: clamp(38px, 9vw, 84px);
   letter-spacing: 6px;
   color: var(--c-dourado);
@@ -54,22 +55,38 @@
 }
 
 .subtitle {
+  margin: 0 0 18px;
   color: var(--c-texto);
-  opacity: 0.9;
-  margin-bottom: 22px;
-  letter-spacing: 1px;
+  opacity: 0.92;
+  letter-spacing: 2px;
+  font-size: clamp(12px, 2.4vw, 15px);
+  font-weight: 700;
 }
 
-.buttons {
+.spark {
+  color: var(--c-dourado);
+}
+
+.column {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-width: min(300px, 78vw);
+  gap: 10px;
+  width: min(280px, 74vw);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: min(340px, 86vw);
+  margin-top: 6px;
 }
 
 .btn {
-  padding: 14px 18px;
-  font-size: 18px;
+  padding: 14px 16px;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 700;
   letter-spacing: 2px;
   color: var(--c-texto);
   background: var(--c-terra-media);
@@ -78,6 +95,7 @@
   border-right-color: var(--c-contorno);
   border-radius: 10px;
   box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45);
+  cursor: pointer;
 }
 
 .btn:active {
@@ -85,17 +103,37 @@
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
 }
 
-.btnPrimary {
+.btnPlay {
   background: var(--c-laranja);
   border-color: #f08a4b;
-  border-bottom-color: var(--c-contorno);
-  border-right-color: var(--c-contorno);
+  font-size: 20px;
+  padding: 16px;
+  animation: playGlow 1.6s ease-in-out infinite;
 }
 
-.hint {
-  margin-top: 26px;
-  font-size: 12px;
-  color: var(--c-texto);
-  opacity: 0.75;
+@keyframes playGlow {
+  0%,
+  100% {
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45), 0 0 10px rgba(240, 138, 75, 0.35);
+  }
+  50% {
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45), 0 0 26px rgba(240, 138, 75, 0.8);
+  }
+}
+
+.btnSmall {
+  font-size: 11px;
   letter-spacing: 1px;
+  padding: 10px 6px;
+  line-height: 1.5;
+}
+
+.btnExit {
+  margin-top: 10px;
+  width: min(280px, 74vw);
+  background: #8f2f24;
+  border-color: #e2574c;
+  border-bottom-color: var(--c-contorno);
+  border-right-color: var(--c-contorno);
+  color: #ffd9d4;
 }

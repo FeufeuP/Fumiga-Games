@@ -1,0 +1,256 @@
+/* Modais do menu — fiel ao original [O]: painel escuro com borda dourada */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 6, 4, 0.72);
+  z-index: 40;
+  padding: 16px;
+}
+
+.modal {
+  width: min(560px, 100%);
+  max-height: 90%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px 24px;
+  background: linear-gradient(180deg, #2b2418 0%, #1d1810 100%);
+  border: 3px solid #8a6a2f;
+  border-radius: 14px;
+  box-shadow: 0 0 0 2px #14100a, 0 16px 40px rgba(0, 0, 0, 0.6);
+  color: #f5e6c8;
+  font-family: "'Courier New', monospace";
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #fde056;
+  text-shadow: 0 2px 0 #14100a, 0 0 14px rgba(253, 224, 86, 0.35);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.close {
+  align-self: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 6px;
+}
+.close img {
+  width: 68px;
+  height: 68px;
+  image-rendering: pixelated;
+}
+.close:hover {
+  filter: brightness(1.2);
+}
+
+/* ── botões ── */
+.btn {
+  border: 2px solid #6d5426;
+  background: #241d12;
+  color: #f5e6c8;
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.05s ease, filter 0.1s ease;
+}
+.btn:hover {
+  filter: brightness(1.15);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btnGreen {
+  background: #3e7d2f;
+  border-color: #6fdc55;
+}
+.btnDark {
+  background: #191510;
+  border-color: #4a3c22;
+  color: #b8a87e;
+}
+.btnRed {
+  background: #8f2f24;
+  border-color: #e2574c;
+}
+
+/* ── OPCOES ── */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.soundBtn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px;
+}
+.soundBtn img {
+  width: 84px;
+  height: 84px;
+  image-rendering: pixelated;
+}
+.soundBtn:hover {
+  filter: brightness(1.2);
+}
+
+/* ── CREDITOS ── */
+.creditsBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+}
+.creditsBlock strong {
+  color: #fde056;
+  letter-spacing: 2px;
+}
+.creditsBlock p {
+  margin: 0;
+  color: #d8c9a3;
+}
+
+/* ── PLACAR (Tm) ── */
+.placarRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+.placarRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+}
+.placarRow strong {
+  color: #fde056;
+}
+.totalBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f0655c 0%, #c0392b 100%);
+  border: 2px solid #fde056;
+  color: #fff3d6;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+.totalBox strong {
+  font-size: 30px;
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
+}
+.footer {
+  margin: 0;
+  font-size: 13px;
+  color: #b8a87e;
+}
+
+/* ── ESTATISTICAS ── */
+.statsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #b8a87e;
+}
+.stat strong {
+  font-size: 20px;
+  color: #fde056;
+}
+
+/* ── CONQUISTAS ── */
+.progressLabel {
+  margin: 0;
+  color: #fde056;
+  font-weight: 700;
+}
+.achList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.ach {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  border: 1px solid transparent;
+  text-align: left;
+}
+.achDone {
+  border-color: #6d5426;
+  background: rgba(109, 84, 38, 0.18);
+}
+.achIcon {
+  font-size: 22px;
+}
+.achText {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: #d8c9a3;
+}
+.achText strong {
+  font-size: 13px;
+  color: #f5e6c8;
+}
+.achBar {
+  height: 5px;
+  border-radius: 3px;
+  background: #14100a;
+  overflow: hidden;
+}
+.achFill {
+  height: 100%;
+  background: #6fdc55;
+}
+.achCount {
+  font-size: 12px;
+  color: #fde056;
+  font-weight: 700;
+}

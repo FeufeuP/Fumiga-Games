@@ -96,24 +96,33 @@ export const ANTS: Record<AntClass, {
 } as const;
 
 export const POPULATION = {
-  START: { worker: 3, soldier: 1, scout: 1 },   // [P] colônia inicial
+  START: { worker: 1, soldier: 1, scout: 1 },   // [O] gs(): ants {worker:1, soldier:1, scout:1}
   MAX: 60,                                       // [P] teto de segurança
 } as const;
 
+// [O] N0=150 R0=18 X0=280 GA=110 BA=120 Hr=12 — demais do bundle
 export const BEHAVIOR = {
-  HARVEST_SEC_PER_UNIT: 0.8,   // [P]
-  ARRIVE_RADIUS: 10,
+  ARRIVE_RADIUS: 12,          // [O] chegada do alvo (updateScout <12)
   SEPARATION_RADIUS: 14,
-  ATTACK_RANGE_PAD: 6,
-  ATTACK_COOLDOWN_SEC: 1,
-  SCOUT_REVEAL_CELL: 2,        // [O] exploradora revela 2 células de névoa
-  WORKER_DETECT: 150,        // [O] N0 × visionScale
-  PICKUP_BASE: 18,           // [O] R0 — alcance de coleta
-  RESOURCE_SIZE: {           // [O] Ii — tamanho/peso do recurso
+  ATTACK_RANGE_PAD: 12,       // [O] Hr — distância ao CORPO do inimigo
+  ATTACK_COOLDOWN_SEC: 1,     // [O] V0
+  SCOUT_REVEAL_CELL: 2,       // [O] exploradora revela 2 células de névoa
+  WORKER_DETECT: 150,         // [O] N0 × visionScale
+  PICKUP_BASE: 18,            // [O] R0 — alcance de coleta (instantânea)
+  RESOURCE_SIZE: {            // [O] Ii — tamanho/peso do recurso
     leaf: 28, mushroom: 40, cactus: 30,
     banana: 30, flower: 28, crystal: 30,  } as Record<ResourceKind, number>,
-  SOLDIER_AGGRO: 220,
-  FLEE_NONE: 0,
+  SOLDIER_AGGRO: 280,         // [O] X0
+  WORKER_SELFDEFENSE: 110,    // [O] GA
+  OTHER_SELFDEFENSE: 120,     // [O] BA (exploradora)
+  DEPOSIT_RADIUS: 28,         // [O] deposita a 28px do ninho
+  FLEE_SEC: 0.9,              // [O] fearT ao tomar dano (não-soldados)
+  STUN_SEC: 0.9,              // [O] stunT ao aterrissar do smash
+  NEST_DEFEND_RADIUS: 340,    // [O] soldados defendem inimigos revelados a 340+ext do ninho
+  SCOUT_AVOID_ENEMY: 140,     // [O] exploradora desvia de inimigo a 140px
+  WANDER_AHEAD: 70,           // [O] ponto de vagueio à frente (operária)
+  SCOUT_RING_STEP: 48,        // [O] anel de fronteira cresce 1 célula
+  RES_MIN_DIST: 170,          // [O] resMinDist inicial
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -122,9 +131,9 @@ export const BEHAVIOR = {
 
 export const FOG = {
   CELL: 48,
-  SCOUT_RADIUS: 96,     // [O] fogCell × 2
-  PASSIVE_RADIUS: 48,   // [O] fogCell × 1
-  NEST_RADIUS: 144,     // [O] fogCell × 3
+  SCOUT_RADIUS: 96,     // [O] fogCell × 2 (só exploradoras revelam)
+  PASSIVE_RADIUS: 48,   // [O] fogCell × 1 (camada ATIVA de render apenas)
+  NEST_RADIUS: 260,     // [O] revealInstant(ninho, 260) no buildWorld
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -186,6 +195,19 @@ export function levelFromXp(xp: number): number {
 // ONDAS — [O] Tr=20 · LA=90 · U0=2 · ZA=15 · poder min(0,5·1,1^(n−1), 3)
 // ═══════════════════════════════════════════════════════════════════
 
+/** [O] cd de ataque dos inimigos (0.9s · chefe 1.1s) e colapso do ninho */
+export const ENEMY_COMBAT = {
+  ATTACK_CD_SEC: 0.9,
+  BOSS_ATTACK_CD_SEC: 1.1,
+  NEST_REACH_PAD: 40,      // [O] wr + extensão + 8
+  AMBIENT_SPEED_MULT: 0.5, // [O] vagueio à metade da velocidade
+} as const;
+
+/** [O] colapso do ninho: perde 30% das folhas e reinicia a onda */
+export const NEST_COLLAPSE = {
+  LEAF_LOSS_FRAC: 0.3,
+} as const;
+
 export const WAVES = {
   COMBAT_SEC: 20,        // [O] Tr
   CALM_SEC: 90,          // [O] LA
@@ -194,6 +216,7 @@ export const WAVES = {
   BOSS_ESCORTS: 2,       // [O] chefe + 2 escoltas a 0,5
   BOSS_ESCORT_POWER: 0.5,// [O]
   MAX_CONCURRENT: 100,   // [O] CA
+  EDGE_SPAWN_PAD: 26,    // [O] nasce fora da borda quando não há sombra
   COUNT_PER_WAVE: (n: number): number => 2 * n,                    // [O]
   POWER: (n: number): number => Math.min(0.5 * Math.pow(1.1, n - 1), 3), // [O]
   REWARD_LEAVES: (n: number): number => 3 + 2 * n,                 // [O]
@@ -415,8 +438,10 @@ export function nesthpCost(bought: number): Array<{ kind: ResourceKind; amount: 
 // ═══════════════════════════════════════════════════════════════════
 
 export const ECONOMY = {
-  START_RESOURCES: { leaf: 10 } as Partial<Record<ResourceKind, number>>, // [P] estoque inicial
+  START_RESOURCES: {} as Partial<Record<ResourceKind, number>>, // [O] gs(): começa com 0
   LUCK_BONUS_CHANCE: 0.1, // [O] 10% × nível de sorte por item depositado
+  /** [P 5A] teto por recurso na carteira — Despensa aumenta */
+  WALLET_CAP_BASE: 200,
 } as const;
 
 export const SAVE = {
@@ -498,7 +523,13 @@ export const REBIRTH_BONUS = {
 } as const;
 
 /** [O] placar: missões×100 + renascimentos×200 */
+/** [O] pesos do placar (função Sm do original) */
 export const SCORE = {
+  PER_RESOURCE: 5,
+  PER_ENEMY: 20,
+  PER_BOSS: 100,
+  PER_XP: 2,
+  PER_ACHIEVEMENT: 50,
   PER_MISSION: 100,
   PER_REBIRTH: 200,
 } as const;

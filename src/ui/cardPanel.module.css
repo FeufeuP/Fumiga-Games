@@ -1,0 +1,265 @@
+/* ── painel de level-up do baralho roguelike (5A) ───────────────── */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 13, 10, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  animation: fadeIn 0.18s ease-out;
+  padding: 12px;
+}
+
+.panel {
+  background: var(--c-terra-media);
+  border: 3px solid var(--c-contorno);
+  border-radius: 14px;
+  box-shadow: 0 6px 0 var(--c-contorno), 0 0 60px rgba(251, 208, 70, 0.15);
+  padding: 18px 18px 12px;
+  max-width: 640px;
+  width: 100%;
+  text-align: center;
+  animation: pop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.titulo {
+  font-family: var(--font-pixel);
+  color: var(--c-dourado);
+  font-size: 26px;
+  margin: 0;
+  letter-spacing: 0.06em;
+  text-shadow: 2px 2px 0 var(--c-contorno);
+}
+
+.subtitulo {
+  font-family: var(--font-pixel);
+  color: var(--c-texto);
+  font-size: 13px;
+  margin: 4px 0 14px;
+  opacity: 0.85;
+}
+
+.cartas {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.card {
+  position: relative;
+  flex: 1 1 170px;
+  max-width: 190px;
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px 12px;
+  background: var(--c-terra-clara);
+  border: 3px solid; /* cor da raridade via inline style */
+  border-radius: 12px;
+  box-shadow: 0 4px 0 var(--c-contorno);
+  color: var(--c-texto);
+  font-family: var(--font-pixel);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 8px 0 var(--c-contorno);
+}
+
+.card:active {
+  transform: translateY(0);
+}
+
+/* ── carta sinérgica: brilho dourado pulsante [doc 03 §5] ───────── */
+.sinergia {
+  animation: brilhoSinergia 1.6s ease-in-out infinite;
+}
+
+@keyframes brilhoSinergia {
+  0%, 100% { box-shadow: 0 4px 0 var(--c-contorno), 0 0 12px rgba(251, 208, 70, 0.45); }
+  50% { box-shadow: 0 4px 0 var(--c-contorno), 0 0 26px rgba(251, 208, 70, 0.9); }
+}
+
+.raridadeTag {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 2px solid;
+  border-radius: 6px;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.sinergiaTag {
+  position: absolute;
+  top: -10px;
+  right: -6px;
+  font-size: 9px;
+  background: var(--c-dourado);
+  color: #241d07;
+  border: 2px solid var(--c-contorno);
+  border-radius: 6px;
+  padding: 1px 5px;
+  transform: rotate(8deg);
+}
+
+.icone {
+  font-size: 40px;
+  line-height: 1;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.4));
+}
+
+.nome {
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+}
+
+.pips {
+  display: flex;
+  gap: 5px;
+  height: 8px;
+}
+
+.pipOn,
+.pipOff {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--c-contorno);
+}
+
+.pipOn {
+  background: var(--c-dourado);
+}
+
+.pipOff {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.desc {
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.95;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.eixo {
+  font-size: 10px;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.tecla {
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.rodape {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--c-texto);
+  opacity: 0.6;
+  margin: 12px 0 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pop {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* celular: cartas empilham rolando */
+@media (max-width: 560px) {
+  .cartas {
+    flex-direction: column;
+    align-items: center;
+  }
+  .card {
+    flex-direction: row;
+    max-width: 100%;
+    width: 100%;
+    min-height: 0;
+    text-align: left;
+    gap: 10px;
+    padding: 10px;
+  }
+  .icone {
+    font-size: 30px;
+  }
+  .nome,
+  .desc {
+    font-size: 13px;
+  }
+  .tecla {
+    position: static;
+    margin-left: auto;
+  }
+  .sinergiaTag {
+    top: -8px;
+    right: 4px;
+  }
+}
+
+/* ── 5B: badges de troca e evolução ─────────────────────────────── */
+.substituiTag {
+  position: absolute;
+  top: -10px;
+  left: -6px;
+  font-size: 9px;
+  background: #63b5dc;
+  color: #0c2436;
+  border: 2px solid var(--c-contorno);
+  border-radius: 6px;
+  padding: 1px 5px;
+  transform: rotate(-8deg);
+}
+
+.evoTag {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  background: var(--c-dourado);
+  color: #241d07;
+  border: 2px solid var(--c-contorno);
+  border-radius: 6px;
+  padding: 1px 6px;
+  letter-spacing: 0.1em;
+}
+
+.recusar {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  background: var(--c-terra-clara);
+  color: var(--c-texto);
+  border: 3px solid var(--c-contorno);
+  border-radius: 10px;
+  padding: 8px 16px;
+  box-shadow: 0 3px 0 var(--c-contorno);
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.recusar:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--c-contorno);
+}

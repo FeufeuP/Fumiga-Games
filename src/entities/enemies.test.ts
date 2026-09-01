@@ -40,14 +40,19 @@ describe('createBoss (stats próprios por mapa)', () => {
   });
 });
 
-function makeHost(ants: Array<{ id: number; x: number; y: number; hp: number }> = []): EnemyHost & {
+function makeHost(
+  ants: Array<{ id: number; x: number; y: number; hp: number; cls?: string }> = [],
+  tauntRadius = 0,
+): EnemyHost & {
   nestDamage: number[]; antDamage: Array<{ id: number; dmg: number }>;
 } {
   const h = {
     w: 3400,
     h: 2400,
     nest: { x: 1700, y: 1248 },
-    ants,
+    ants: ants.map((a) => ({ cls: 'worker', ...a })),
+    props: [],
+    tauntRadius,
     rng: { next: () => 0.5, float: (a: number, b: number) => (a + b) / 2 },
     damageAnt(id: number, dmg: number) { h.antDamage.push({ id, dmg }); },
     damageNest(dmg: number) { h.nestDamage.push(dmg); },

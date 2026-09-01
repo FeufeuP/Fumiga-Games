@@ -39,6 +39,17 @@ function Screens({ engine }: { engine: GameEngine }) {
 
   useEffect(() => () => engine.detach(), [engine]);
 
+  // [O Or] música começa no primeiro gesto do usuário (política de autoplay)
+  useEffect(() => {
+    const gesture = () => engine.audio.ensureMusic();
+    window.addEventListener('pointerdown', gesture);
+    window.addEventListener('keydown', gesture);
+    return () => {
+      window.removeEventListener('pointerdown', gesture);
+      window.removeEventListener('keydown', gesture);
+    };
+  }, [engine]);
+
   return (
     <>
       {hud.screen === 'menu' && <MainMenu engine={engine} hud={hud} />}
