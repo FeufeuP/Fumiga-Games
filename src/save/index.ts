@@ -26,6 +26,8 @@ interface SavedAnt {
   // IA fiel [O] (ausente em saves antigos → default)
   angle?: number; wanderAngle?: number; wanderT?: number;
   scoutA?: number; scoutR?: number;
+  // 5B: guarda temporário (Muralha de defensores)
+  tempT?: number;
 }
 
 export interface RunSaveV2 {
@@ -41,7 +43,11 @@ export interface RunSaveV2 {
   unlockedMaps: MapId[];
   wavesByMap: Partial<Record<MapId, number>>;
   totals: { delivered: number; enemiesKilled: number; bossesKilled: number };
-  queen: { hunger: number; hungerMax?: number; dead: boolean; feedT: number; warn30: boolean; warn10: boolean };
+  queen: {
+    hunger: number; hungerMax?: number; dead: boolean; feedT: number;
+    warn30: boolean; warn10: boolean;
+    eggT?: number; satietyT?: number;
+  };
   nestHp: number;
   wave: WaveState;
   ants: SavedAnt[];
@@ -63,8 +69,13 @@ export interface RunSaveV2 {
 
   // v3 (baralho roguelike 5A — opcionais, retrocompatíveis)
   cards?: Record<string, number>;
-  pendingCardPanels?: number;
+  pendingCardPanels?: number | Array<'levelup' | 'bau_comum' | 'bau_chefe' | 'bau_lendario'>;
   queenReviveUsed?: boolean;
+  // v3 (baralho roguelike 5B)
+  chitin?: number;
+  chests?: Array<{ id: number; x: number; y: number }>;
+  slotBonus?: Record<'especializacao' | 'comportamento' | 'passiva', number>;
+  bossesThisRun?: number;
 }
 
 export type RunSaveV3 = RunSaveV2 & Required<Pick<RunSaveV2, 'version'>>;
@@ -141,6 +152,7 @@ export function serialize(engine: GameEngine): RunSaveV2 {
       z: a.z, vx: a.vx, vy: a.vy, vz: a.vz,
       angle: a.angle, wanderAngle: a.wanderAngle, wanderT: a.wanderT,
       scoutA: a.scoutA, scoutR: a.scoutR,
+      tempT: a.tempT,
     })),
     resourceNodes: engine.resources.map((r) => ({
       id: r.id, kind: r.kind, x: Math.round(r.x), y: Math.round(r.y),
@@ -159,8 +171,12 @@ export function serialize(engine: GameEngine): RunSaveV2 {
     ownedAnts: { ...engine.ownedAnts },
     respawnQueue: engine.respawnQueue.map((q) => ({ cls: q.cls, t: q.t })),
     cards: { ...engine.cards },
-    pendingCardPanels: engine.pendingCardPanels,
+    pendingCardPanels: [...engine.pendingCardPanels],
     queenReviveUsed: engine.queenReviveUsed,
+    chitin: engine.chitin,
+    chests: engine.chests.map((c) => ({ ...c })),
+    slotBonus: { ...engine.slotBonus },
+    bossesThisRun: engine.bossesThisRun,
   };
 }
 
@@ -213,15 +229,23 @@ export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
   engine.rebirths = save.rebirths ?? 0;
   engine.ownedAnts = { ...(save.ownedAnts ?? { worker: 0, soldier: 0, scout: 0 }) };
   engine.respawnQueue = (save.respawnQueue ?? []).map((q) => ({ cls: q.cls, t: q.t }));
-  // baralho roguelike 5A: restaura e recalcula os modificadores
+  // baralho roguelike 5A+5B: restaura e recalcula os modificadores
   engine.cards = { ...(save.cards ?? {}) };
   engine.cardMods = cardModsFrom(engine.cards);
-  engine.pendingCardPanels = save.pendingCardPanels ?? 0;
+  const pend = save.pendingCardPanels;
+  engine.pendingCardPanels = Array.isArray(pend) ? [...pend] : pend ? ['levelup'] : [];
   engine.queenReviveUsed = save.queenReviveUsed ?? false;
   engine.cardPanel = null;
+  engine.replaceDialog = null;
+  engine.chitin = save.chitin ?? 0;
+  engine.chests = (save.chests ?? []).map((c) => ({ ...c }));
+  engine.slotBonus = { ...(save.slotBonus ?? { especializacao: 0, comportamento: 0, passiva: 0 }) };
+  engine.bossesThisRun = save.bossesThisRun ?? 0;
   engine.queen = {
     ...save.queen,
     hungerMax: save.queen.hungerMax ?? Math.round(100 * engine.cardMods.hungerMaxMult),
+    eggT: save.queen.eggT ?? 0,
+    satietyT: save.queen.satietyT ?? 0,
   };
   engine.nestHp = save.nestHp;
   engine.wave = { ...save.wave };
@@ -237,6 +261,13 @@ export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
   engine.props = world.props;
   engine.enemies = [];
   engine.nest = { x: world.nestX, y: world.nestY, hp: save.nestHp, hpMax: engine.nestHpMax() };
+  // armadilhas de resina: posições fixas recalculadas se a carta estiver ativa
+  engine.traps = engine.cardMods.trapCdSec > 0
+    ? [0, 1, 2].map((i) => {
+        const ang = (i / 3) * Math.PI * 2 - Math.PI / 2;
+        return { x: world.nestX + Math.cos(ang) * 130, y: world.nestY + Math.sin(ang) * 130, cd: 0 };
+      })
+    : [];
   engine.resources = save.resourceNodes.map((r) => ({
     ...r, phase: r.phase ?? 0,
   }));

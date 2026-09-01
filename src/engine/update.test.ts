@@ -59,6 +59,10 @@ class MockHost implements SimHost {
   worldTexts: import('../core/types').WorldText[] = [];
   dust: import('../core/types').Dust[] = [];
   buffWaves: import('../core/types').BuffWave[] = [];
+  tauntRadius = 0;
+  cardTimers = { swarmT: 8, acidT: 20, chargeT: 30, guardCd: 0 };
+  traps: Array<{ x: number; y: number; cd: number }> = [];
+  chests: Array<{ id: number; x: number; y: number }> = [];
 
   constructor() {
     this.fog = new FogOfWar(this.w, this.h);

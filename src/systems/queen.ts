@@ -15,10 +15,14 @@ export interface QueenState {
   feedT: number;
   warn30: boolean;
   warn10: boolean;
+  /** [P 5B] cronômetro do próximo ovo (Postura acelerada/Ninhada dupla) */
+  eggT: number;
+  /** [P 5B] Saciedade duradoura: fome pausada enquanto >0 */
+  satietyT: number;
 }
 
 export function createQueenState(hungerMax = QUEEN.HUNGER_MAX): QueenState {
-  return { hunger: hungerMax, hungerMax, dead: false, feedT: 0, warn30: false, warn10: false };
+  return { hunger: hungerMax, hungerMax, dead: false, feedT: 0, warn30: false, warn10: false, eggT: 0, satietyT: 0 };
 }
 
 export type QueenEvent =
@@ -35,12 +39,14 @@ export interface QueenHost {
   onQueenDead(): void;
 }
 
-/** Modificadores de cartas que afetam a Rainha (5A — modifiers.ts). */
+/** Modificadores de cartas que afetam a Rainha (5A/5B — modifiers.ts). */
 export interface QueenOpts {
   /** Apetite contido: ×dreno (1 = neutro) */
   drainMult?: number;
   /** Porção reforçada: +fome por item comido */
   perItemBonus?: number;
+  /** Saciedade duradoura: segundos de imunidade após comer */
+  satietySec?: number;
 }
 
 export function updateQueen(q: QueenState, host: QueenHost, dt: number, opts: QueenOpts = {}): void {
@@ -49,8 +55,13 @@ export function updateQueen(q: QueenState, host: QueenHost, dt: number, opts: Qu
   const drainMult = opts.drainMult ?? 1;
   const perItem = QUEEN.HUNGER_PER_ITEM + (opts.perItemBonus ?? 0);
 
-  // drena fome [O] ⅓/s (Apetite contido reduz)
-  q.hunger = Math.max(0, q.hunger - QUEEN.HUNGER_DRAIN * drainMult * dt);
+  // Saciedade duradoura (carta 5B): imune à fome por um tempo após comer
+  if (q.satietyT > 0) {
+    q.satietyT = Math.max(0, q.satietyT - dt);
+  } else {
+    // drena fome [O] ⅓/s (Apetite contido reduz)
+    q.hunger = Math.max(0, q.hunger - QUEEN.HUNGER_DRAIN * drainMult * dt);
+  }
 
   // avisos [O] s0=30 e 10 (percentuais do máximo), com histerese
   const warnAt = max * 0.3;
@@ -86,6 +97,7 @@ export function updateQueen(q: QueenState, host: QueenHost, dt: number, opts: Qu
         break;
       }
       q.hunger = Math.min(max, q.hunger + perItem);
+      if (opts.satietySec && opts.satietySec > 0) q.satietyT = opts.satietySec;
     }
   } else if (q.feedT < 0) {
     q.feedT = 0;

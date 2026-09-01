@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  CARDS_5A, cardById, temGanhoDecrescente, RARIDADES, SLOTS, EIXOS,
+  CARDS_5A, TODAS, cardById, temGanhoDecrescente, RARIDADES, SLOTS, EIXOS,
   type Raridade,
 } from './cards';
 import { drawPanel, pesoRaridade, bonusSinergia, slotsUsados, type CartaPainel } from './cardPool';
@@ -124,20 +124,23 @@ describe('drawPanel: sorteio do painel de level-up', () => {
     }
   });
 
-  it('respeita o teto de slots: passivas cheias só oferecem subir nível', () => {
+  it('slot cheio: máx 1 carta nova por painel, marcada p/ substituição (5B)', () => {
     // 2 passivas distintas = teto inicial de 'passiva' cheio
     const cartas: Record<string, number> = { paredes_grossas: 1, apetite_contido: 1 };
     expect(slotsUsados(cartas, 'passiva')).toBe(2);
     for (let i = 0; i < 20; i++) {
       const p = drawPanel(cartas, 2, { rng: rngFixo(i * 13 + 5) });
+      const novas = p.filter(
+        (c) => c.tipo === 'carta' && cardById(c.id)?.categoria === 'passiva' && !cartas[c.id],
+      );
+      // no máximo 1 carta nova de passiva por painel, sempre marcada
+      expect(novas.length).toBeLessThanOrEqual(1);
+      for (const c of novas) {
+        if (c.tipo === 'carta') expect(c.requerSubstituicao).toBe(true);
+      }
+      // cartas de passiva possuídas (subir nível) nunca são marcadas
       for (const c of p) {
-        if (c.tipo !== 'carta') continue;
-        const def = cardById(c.id);
-        if (!def) continue;
-        if (def.categoria === 'passiva') {
-          // só se já for possuída (subir nível não gasta slot)
-          expect(cartas[c.id]).toBeDefined();
-        }
+        if (c.tipo === 'carta' && cartas[c.id]) expect(c.requerSubstituicao).toBe(false);
       }
     }
   });
@@ -161,20 +164,18 @@ describe('drawPanel: sorteio do painel de level-up', () => {
   });
 
   it('trava anti-vazio: nunca devolve menos de 3 opções (fallbacks)', () => {
-    // tudo no máximo + slots cheios: só cabe fallback
+    // TODAS as 68 cartas no máximo: só cabe fallback
     const cartas: Record<string, number> = {};
-    for (const c of CARDS_5A) {
-      if (c.categoria === 'passiva') cartas[c.id] = 1; // 6 passivas > teto 2: cheio
-      else if (c.categoria === 'especializacao') cartas[c.id] = 1; // 6 > teto 3: cheio
+    for (const c of TODAS) {
+      if (c.categoria !== 'evolucao' && !c.requerClasse) cartas[c.id] = c.valores.length;
     }
-    // força todas as possuídas ao máximo
-    for (const c of CARDS_5A) cartas[c.id] = c.valores.length;
     const p = drawPanel(cartas, 50, { rng: rngFixo(1) });
     expect(p).toHaveLength(3);
     expect(p.every((c) => c.tipo === 'fallback')).toBe(true);
     const ids = new Set(p.map((c: CartaPainel) => c.id));
     expect(ids.has('fallback_cura')).toBe(true);
     expect(ids.has('fallback_comida')).toBe(true);
+    expect(ids.has('fallback_quitina')).toBe(true);
   });
 });
 

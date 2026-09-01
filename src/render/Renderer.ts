@@ -84,6 +84,9 @@ export class Renderer {
     };
 
     this.drawGround(ctx, scene, view);
+    this.drawPheromoneZone(ctx, scene);
+    this.drawTraps(ctx, scene);
+    this.drawChests(ctx, scene, view);
     this.drawSorted(ctx, scene, view);
     this.drawDust(ctx, scene);
     this.drawSmashFx(ctx, scene);
@@ -107,6 +110,68 @@ export class Renderer {
       ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(${m.color}, ${(0.8 * (1 - k)).toFixed(3)})`;
       ctx.fill();
+    }
+  }
+
+  /** [P 5B] Nuvem de feromônio: zona translúcida ao redor do ninho */
+  private drawPheromoneZone(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    if (!scene.pheromoneZone) return;
+    const t = performance.now() / 1000;
+    const r = 190 + Math.sin(t * 1.5) * 6;
+    const grad = ctx.createRadialGradient(scene.nest.x, scene.nest.y, 40, scene.nest.x, scene.nest.y, r);
+    grad.addColorStop(0, 'rgba(107,221,112,0.02)');
+    grad.addColorStop(1, 'rgba(107,221,112,0.16)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(scene.nest.x, scene.nest.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(107,221,112,0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(scene.nest.x, scene.nest.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  /** [P 5B] Armadilhas de resina: poços que prendem inimigos */
+  private drawTraps(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    for (const t of scene.traps) {
+      const pronto = t.cd <= 0;
+      const r = pronto ? 13 : 9;
+      ctx.fillStyle = pronto ? 'rgba(233,101,32,0.55)' : 'rgba(233,101,32,0.18)';
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = pronto ? 'rgba(251,208,70,0.8)' : 'rgba(251,208,70,0.3)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (pronto) {
+        ctx.fillStyle = 'rgba(251,208,70,0.9)';
+        ctx.font = '10px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('🪤', t.x, t.y + 3);
+      }
+    }
+  }
+
+  /** [P 5B] Baús de exploração no mundo */
+  private drawChests(ctx: CanvasRenderingContext2D, scene: Scene, view: View): void {
+    for (const c of scene.chests) {
+      if (c.x < view.left - 40 || c.x > view.right + 40 || c.y < view.top - 40 || c.y > view.bottom + 40) continue;
+      const bob = Math.sin(scene.timeSec * 2.5 + c.id) * 3;
+      // brilho de tesouro
+      const grad = ctx.createRadialGradient(c.x, c.y + bob, 4, c.x, c.y + bob, 26);
+      grad.addColorStop(0, 'rgba(251,208,70,0.35)');
+      grad.addColorStop(1, 'rgba(251,208,70,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y + bob, 26, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = '22px "Courier New", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🎁', c.x, c.y + bob);
     }
   }
 

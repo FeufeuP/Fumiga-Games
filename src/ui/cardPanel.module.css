@@ -217,3 +217,49 @@
     right: 4px;
   }
 }
+
+/* ── 5B: badges de troca e evolução ─────────────────────────────── */
+.substituiTag {
+  position: absolute;
+  top: -10px;
+  left: -6px;
+  font-size: 9px;
+  background: #63b5dc;
+  color: #0c2436;
+  border: 2px solid var(--c-contorno);
+  border-radius: 6px;
+  padding: 1px 5px;
+  transform: rotate(-8deg);
+}
+
+.evoTag {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  background: var(--c-dourado);
+  color: #241d07;
+  border: 2px solid var(--c-contorno);
+  border-radius: 6px;
+  padding: 1px 6px;
+  letter-spacing: 0.1em;
+}
+
+.recusar {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  background: var(--c-terra-clara);
+  color: var(--c-texto);
+  border: 3px solid var(--c-contorno);
+  border-radius: 10px;
+  padding: 8px 16px;
+  box-shadow: 0 3px 0 var(--c-contorno);
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.recusar:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--c-contorno);
+}

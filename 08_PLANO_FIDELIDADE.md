@@ -326,3 +326,90 @@ Implementa o design do doc `03_BARALHO_ROGUELIKE.md` (Parte 6 do dossiê) com as
   despausa; Paredes grossas cura; Rainha eterna revive 1× e a 2ª é definitiva;
   Despensa teto 200→330; população 60 com Ninhada maior liberando +4;
   persistência de cartas + painel pendente no save.
+
+## Apêndice G — Fase 5B: 48 cartas novas, evoluções, baús e slots (01/09/2026) ✅
+
+Baralho final: **68 cartas jogáveis + 6 evoluções = 74 definições**, mantendo a
+arquitetura 5A (catálogo declarativo → `modifiers.ts` tradutor único →
+`cardPool.ts` sorteio com raridade/sinergia/efeito decrescente).
+
+### O que entrou
+
+**48 cartas novas por eixo** (níveis 3 com ganho decrescente, `descCurta` ≤60):
+- **Colônia (5)**: Colônia unida 🟢 +10/15/20% aliados ≤80px · Mente-colmeia 🟣
+  +10% colônia e +1 slot de especialização · Descanso noturno ⚪ regenera
+  1/1.5/2 HP/s à noite · Preparo de inverno ⚪ +1/2/3 XP por recurso ·
+  Trabalho em turnos 🟢 operárias forrageiam de noite.
+- **Rainha (8)**: Postura acelerada ⚪ −11/22/33% intervalo de ovos · Ninhada
+  dupla 🟢 15/25/35% chance de 2 ovos · Saciedade duradoura ⚪ 20/30/40s sem
+  fome após comer · Força real 🟡 soldados +25/42/57% HP · Fertilidade 🟣
+  +25/50/75% ovos por postura · Devoradora voraz ⚪ −30/50/70% dreno ·
+  Ovo de escolha 🟡 escolhe a classe do próximo ovo · Instinto guerreiro 🟢
+  1º ovo de cada onda é soldado.
+- **Operária (7)**: Carregadora 🟢 descarga +1/2/3 item · Passo interno ⚪
+  +18/32/46% vel perto do ninho · Mãos hábeis 🟢 repara 5/8/11 HP/s ·
+  Turno extra ⚪ +1/2/3 teto de operárias · Engenheiras 🟡 reparam mesmo em
+  combate · Instinto de retorno 🟢 foge a 140/180/220px · Casca dura ⚪
+  operárias +16/26/40 HP.
+- **Exploradora (9)**: Olhos largos 🟢 +25/50/70px visão · Pernas longas ⚪
+  +14/24/34% vel · Sentido de recurso 🟣 detecta tudo no mapa · Mapeadoras
+  ⚪ mapa revela 40/60/80% passivo · Caçadora de tesouros 🟢 +7/12/17%
+  chance de baú · Vanguarda 🟢 +15/25/35% XP por área nova · Faro de batalha
+  ⚪ +2/4/6 XP por kill · Ninho seguro 🟢 explorer revive 1×/partida ·
+  Persistência 🟡 XP de área dobra.
+- **Soldado (8)**: Golpe preciso ⚪ +8/15/23% crítico · Coletor de quitina 🟢
+  +1/2/2 quitina por chefe · Provocação 🟢 inimigos a 140/220/300px persegue
+  o soldado · Fúria da colônia ⚪ +2/4/4% dano por formiga viva (máx 30/45/60%)
+  · Comando 🟡 soldados causam +30/50/70% · Fúria assassina 🟢 +25/42/57%
+  dano vs chefes · Suporte tático ⚪ aliados ≤130px +12/20/27% dano ·
+  Reflexos rápidos 🟢 esquiva 12/20/27%.
+- **Comportamento (11)**: Enxame de mordidas ⚪ 1/2/4 dano/0,5s por formiga ≤40px
+  · Espinhos do ninho 🟢 8/12/17 dano/s ao atacante · Armadilha de resina 🟢
+  prende 2s, recarga 20/15/10s · Nuvem de feromônio 🟡 zona +15/30/45% vel
+  · Chuva de ácido 🟣 10/16/22 dano/20s no maior grupo · Muralha de
+  defensores 🟢 2 guardas por 15/20/25s quando o ninho é atacado ·
+  Investida do gigante 🟣 12/20/28 dano a cada 8s · Feromônio de fúria 🟡
+  +50% dano com ninho <50% · túnel de fuga ⚪ operárias escapam 2×/onda ·
+  reciclagem 🟢 25% dos custos devolvidos · alerta precoce ⚪ +5/10/15s
+  antes da onda.
+
+**6 evoluções** (🟣 lendaria, receita = base no máx + suporte nível ≥1, nível
+mínimo 6–8; substitui as cartas base no baralho):
+Legião de ataque (Mandíbulas+Comando) · Caravana de recursos (Mochila+Passo
+leve) · Coração dourado (Porção+Devoradora: ovos grátis com fome ≥80%) ·
+Bastião (Paredes+Muralha) · Espiral tóxica (Toxina+Nuvem) · Sentinela
+(Couraça+Provocação).
+
+**Slots com teto (§6)**: passiva 2→6, especialização 3→6, comportamento 2→4;
+evolução não gasta slot. Slot cheio → no máx 1 carta nova/painel marcada
+"♻ TROCA": abre diálogo de substituição (reembolso de XP = níveis×25,
+~50%) ou recusa (carta devolvida).
+
+**Baús (§7)**: comum no mapa (500px+, revelado pela exploradora; onda limpa
+25%+bonus, máx 3 no mapa) → painel de 3; chefe → 5 escolhas com rara+
+garantida + 2 quitina; 2º chefe → lendário de 3 com evolução disponível
+garantida na 1ª posição. Quitina é a moeda das classes (Fase 5C).
+
+**Classes bloqueadas (§8)**: 17 cartas exigem Defensora (5) / Tóxica (6) /
+Gigante (6) desbloqueadas — fora do sorteio até custar quitina (próxima fase).
+
+### Integração no engine
+- Produção de ovos na Rainha (`updateQueenProduction`: ciclo
+  operária→soldado→operária→exploradora, custo 3 itens, ninhada dupla,
+  Coração dourado grátis); saciedade pausa o dreno.
+- `Scene`: `chests`/`traps`/`pheromoneZone`; `HudState`: quitina, cartas com
+  slots, `replaceDialog`, `cardPanel.origem`; Renderer desenha zona de
+  feromônio (anel 190px), armadilhas (🪤) e baús (🎁 com bob).
+- Painéis por origem (nível/baú comum/chefe/lendário) em fila tipada;
+  substituição com reembolso; guardas temporários não contam no cemitério;
+  save v3 estendido (quitina, baús, slotBonus, traps recalculadas, ovo/saciedade).
+- UI: CardPanel com badges ♻ TROCA/✨ EVOLUÇÃO, diálogo de substituição,
+  aba CARTAS no menu de pausa (slots por categoria com pips), quitina no HUD.
+
+### Validação
+- `tsc --noEmit` limpo · **142/142 testes** (13 arquivos: +20 do baralho 5B,
+  +14 de integração: ovos/ciclo, coração dourado, saciedade, baú revelado,
+  chefe→baú de 5, 2º chefe→lendário, evolução substitui base, substituição com
+  reembolso, armadilha prende 2s, provocação redireciona inimigo, espinhos,
+  chuva de ácido, guardas temporários, vanguarda dá XP, persistência) ·
+  `npm run build` ok.

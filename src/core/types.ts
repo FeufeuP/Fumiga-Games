@@ -79,6 +79,10 @@ export interface Ant {
   /** brilho temporário (onda de buff) — undefined = sem brilho */
   glowT?: number;
   glowColor?: string;     // rgb "r,g,b"
+  /** [P 5B] guarda temporário (Muralha de defensores): sai ao zerar */
+  tempT?: number;
+  /** [P 5B] Colônia unida: tem aliado a ≤80px (recalculado) */
+  nearAlly?: boolean;
 }
 
 export type EnemyState = 'wander' | 'chase' | 'attack';
@@ -108,6 +112,8 @@ export interface Enemy {
   seed: number;
   angle: number;          // rumo atual (rad) [O]
   patrolT: number;        // vagueio ambiente [O]
+  /** [P 5B] preso em armadilha de resina — não anda nem ataca */
+  rootT?: number;
 }
 
 export interface ResourceNode {
@@ -178,13 +184,18 @@ export interface Scene {
   readonly worldTexts: ReadonlyArray<WorldText>;
   readonly dust: ReadonlyArray<Dust>;
   readonly buffWaves: ReadonlyArray<BuffWave>;
+  /** [P 5B] baús de exploração e armadilhas de resina */
+  readonly chests: ReadonlyArray<{ id: number; x: number; y: number }>;
+  readonly traps: ReadonlyArray<{ x: number; y: number; cd: number }>;
+  /** zona de feromônio ativa? (raio 190 do ninho) */
+  readonly pheromoneZone: boolean;
 }
 
 /** Contrato entre motor e comportamentos (testável com mock). */
 export interface AntWorld {
   readonly w: number;
   readonly h: number;
-  readonly nest: { x: number; y: number };
+  readonly nest: { x: number; y: number; hp?: number; hpMax?: number };
   readonly ants: readonly Ant[];
   readonly props: readonly Prop[];
   enemies: readonly Enemy[];
@@ -277,6 +288,14 @@ export interface HudState {
   achievements: { done: number; total: number; progress: Array<{ id: string; title: string; desc: string; value: number; goal: number; done: boolean }> };
   rebirths: number;
   score: number;
-  /** painel de level-up do baralho roguelike (5A) — aberto congela o mundo */
-  cardPanel: { level: number; choices: CartaPainel[] } | null;
+  /** painel de level-up/baú do baralho roguelike — aberto congela o mundo */
+  cardPanel: { level: number; origem?: string; choices: CartaPainel[] } | null;
+  /** quitina (moeda das classes futuras) */
+  chitin: number;
+  /** cartas da build (aba CARTAS do pause) */
+  cards: Array<{ id: string; nome: string; icone: string; raridade: string; nivel: number; nivelMax: number; categoria: string; eixo: string }>;
+  /** uso de slots por categoria */
+  slots: Record<string, { usados: number; teto: number }>;
+  /** substituição pendente (slot cheio) */
+  replaceDialog: { novaId: string; opcoes: Array<{ id: string; nome: string; icone: string; nivel: number; nivelMax: number }> } | null;
 }

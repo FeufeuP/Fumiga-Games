@@ -26,11 +26,12 @@ import { stepSimulation, makeWaveEnemy, makeBoss, respawnSeconds } from './updat
 import { generateWorld } from '../world/world';
 import { createAnt, resetAntIds } from '../entities/ants';
 import { resetEnemyIds } from '../entities/enemies';
-import { createQueenState } from '../systems/queen';
+import { createQueenState, nextFoodItem } from '../systems/queen';
 import { emptyUpgrades, modsFrom, upgradeById } from '../systems/shop';
 import { cardModsFrom, emptyCardMods, type CardMods } from '../roguelike/modifiers';
-import { drawPanel } from '../roguelike/cardPool';
-import { cardById } from '../roguelike/cards';
+import { drawPanel, slotsUsados } from '../roguelike/cardPool';
+import { cardById, SLOTS, type CardCategoria } from '../roguelike/cards';
+import { evolucaoById } from '../roguelike/evolutions';
 import { Camera } from '../render/Camera';
 import { Renderer } from '../render/Renderer';
 import { loadSprites, type SpriteSet } from '../render/sprites';
@@ -107,6 +108,15 @@ function emptyHud(): HudState {
     rebirths: 0,
     score: 0,
     cardPanel: null,
+    chitin: 0,
+    cards: [],
+    slots: {
+      passiva: { usados: 0, teto: 2 },
+      especializacao: { usados: 0, teto: 3 },
+      comportamento: { usados: 0, teto: 3 },
+      evolucao: { usados: 0, teto: 0 },
+    },
+    replaceDialog: null,
   };
 }
 
@@ -164,13 +174,36 @@ export class GameEngine implements AntWorld, Scene {
   cards: Record<string, number> = {};
   /** efeitos agregados — ÚNICO ponto de aplicação é modifiers.ts */
   cardMods: CardMods = emptyCardMods();
-  /** painéis de level-up aguardando escolha (level-up em cascata) */
-  pendingCardPanels = 0;
+  /** painéis aguardando escolha: level-up e baús (fila na ordem) */
+  pendingCardPanels: Array<'levelup' | 'bau_comum' | 'bau_chefe' | 'bau_lendario'> = [];
   /** painel aberto agora — congela o mundo (clock.paused) */
-  cardPanel: { level: number; choices: ReturnType<typeof drawPanel> } | null = null;
+  cardPanel: { level: number; choices: ReturnType<typeof drawPanel>; origem: string } | null = null;
   /** Rainha eterna: 1 revive por run */
   queenReviveUsed = false;
   private lastCapWasteToastT = -999;
+
+  // ── 5B ────────────────────────────────────────────────────────────
+  /** timers dos comportamentos (enxame 8s / ácido 20s / investida 30s / guardas) */
+  cardTimers = { swarmT: 8, acidT: 20, chargeT: 30, guardCd: 0 };
+  /** armadilhas de resina (posições fixas ao redor do ninho) */
+  traps: Array<{ x: number; y: number; cd: number }> = [];
+  /** baús de exploração no mapa */
+  chests: Array<{ id: number; x: number; y: number }> = [];
+  private nextChestId = 1;
+  /** quitina: recurso dos chefes, moeda das classes futuras (Fase 6) */
+  chitin = 0;
+  /** chefes derrotados nesta run (baú lendário no 2º) */
+  bossesThisRun = 0;
+  /** bônus de slot por categoria (Mente-colmeia, baú lendário) */
+  slotBonus: Record<'especializacao' | 'comportamento' | 'passiva', number> = {
+    especializacao: 0, comportamento: 0, passiva: 0,
+  };
+  /** substituição pendente: carta nova esperando decisão */
+  replaceDialog: { novaId: string; opcoes: Array<{ id: string; nome: string; icone: string; nivel: number; nivelMax: number }> } | null = null;
+  /** classes desbloqueadas (Fase 6 — por ora nenhuma) */
+  readonly classesDesbloqueadas: string[] = [];
+  /** ciclo de classes dos ovos da Rainha */
+  private eggCycle = 0;
 
   // ── ciclo A [O] ──────────────────────────────────────────────────
   ownedAnts: Record<AntClass, number> = { worker: 0, soldier: 0, scout: 0 };
@@ -231,6 +264,8 @@ export class GameEngine implements AntWorld, Scene {
 
   deposit(units: number, kind: ResourceKind, by: AntClass): void {
     const xpPer = XP.PER_DEPOSIT + this.mods.xpBoost;
+    // Carregadora (carta 5B): +itens por viagem
+    units += this.cardMods.depositBonusUnits;
     for (let i = 0; i < units; i++) {
       this.wallet[kind] += 1;
       this.addXp(xpPer);
@@ -239,6 +274,27 @@ export class GameEngine implements AntWorld, Scene {
         this.wallet[kind] += 1;
         this.addXp(1);
       }
+    }
+    // Colheita farta (carta 5B): chance independente de item bônus
+    if (this.rng.chance(this.cardMods.harvestLuckChance)) {
+      this.wallet[kind] += 1;
+      this.addXp(1);
+    }
+    // Caravana de recursos (evolução): coletoras juntas descarregam
+    if (this.cardMods.caravanaRecursos) {
+      let extras = 0;
+      for (const a of this.ants) {
+        if (a.cls !== 'worker' || a.hp <= 0 || a.carrying <= 0) continue;
+        if (Math.hypot(a.x - this.nest.x, a.y - this.nest.y) > 90) continue;
+        extras += a.carrying;
+        const k = a.carryKind ?? kind;
+        this.wallet[k] += a.carrying;
+        this.addXp(a.carrying * xpPer);
+        a.carrying = 0;
+        a.carryKind = null;
+        a.state = 'idle';
+      }
+      units += extras;
     }
     this.totals.delivered += units;
     this.totals.byResource[kind] = (this.totals.byResource[kind] ?? 0) + units;
@@ -340,7 +396,19 @@ export class GameEngine implements AntWorld, Scene {
     const a = this.ants.find((x) => x.id === antId);
     if (!a || a.hp <= 0) return;
     // [O] armadura com piso de 50%
-    a.hp -= dmg * Math.max(0.5, 1 - this.mods.armorReduction);
+    let dano = dmg * Math.max(0.5, 1 - this.mods.armorReduction);
+    // Legião de ataque (evolução): soldados ≤130px dividem o dano recebido
+    if (this.cardMods.legiaoAtaque && a.cls === 'soldier') {
+      const legion = this.ants.filter(
+        (x) => x.cls === 'soldier' && x.hp > 0 && Math.hypot(x.x - a.x, x.y - a.y) <= 130,
+      );
+      if (legion.length > 1) {
+        const parte = dano / legion.length;
+        for (const s of legion) s.hp -= parte;
+        dano = 0;
+      }
+    }
+    a.hp -= dano;
     // [O] não-soldados fogem por 0.9s na direção contrária
     if (a.cls !== 'soldier' && fromX !== undefined && fromY !== undefined) {
       const d = Math.hypot(a.x - fromX, a.y - fromY) || 1;
@@ -356,19 +424,40 @@ export class GameEngine implements AntWorld, Scene {
     if (this.cardMods.nestArmor > 0 && dmg > 0) {
       dmg = Math.max(1, dmg - this.cardMods.nestArmor);
     }
+    // Espinhos do ninho (carta 5B): dano FLAT a quem toca
+    const thornFlat = this.cardMods.nestThornsFlat;
+    let atacante: Enemy | null = null;
+    if (_fromX !== undefined && _fromY !== undefined) {
+      let bd = 160;
+      for (const e of this.enemies) {
+        if (e.hp <= 0) continue;
+        const d = Math.hypot(e.x - _fromX, e.y - _fromY);
+        if (d < bd) { bd = d; atacante = e; }
+      }
+      if (atacante && thornFlat > 0) {
+        this.damageEnemy(atacante, thornFlat, 'soldier');
+      }
+    }
     const before = this.nestHp;
     this.nestHp = Math.max(0, this.nestHp - dmg);
     this.shake = Math.max(this.shake, 0.7);
     // Espinhos de raiz (carta 5A): devolve parte do dano ao atacante próximo
-    if (this.cardMods.nestThornsPct > 0 && _fromX !== undefined && _fromY !== undefined) {
-      let attacker: Enemy | null = null;
-      let bestD = 160;
-      for (const e of this.enemies) {
-        if (e.hp <= 0) continue;
-        const d = Math.hypot(e.x - _fromX, e.y - _fromY);
-        if (d < bestD) { bestD = d; attacker = e; }
+    if (this.cardMods.nestThornsPct > 0 && atacante) {
+      this.damageEnemy(atacante, (dmg * this.cardMods.nestThornsPct) / 100, 'soldier');
+    }
+    // Muralha de defensores (carta 5B): ninho atacado invoca 2 guardas
+    if (this.cardMods.guardSummonSec > 0 && this.cardTimers.guardCd <= 0 && this.runActive && !this.gameOver) {
+      this.cardTimers.guardCd = 40;
+      for (let i = 0; i < 2; i++) {
+        const ang = this.rng.next() * Math.PI * 2;
+        const guarda = createAnt('soldier', this.nest.x + Math.cos(ang) * 26, this.nest.y + Math.sin(ang) * 26, () => this.rng.next());
+        guarda.hp = guarda.hpMax = Math.round(ANTS.soldier.hp * this.mods.hpMult);
+        guarda.tempT = this.cardMods.guardSummonSec;
+        guarda.glowT = 2.5;
+        guarda.glowColor = '99,181,220';
+        this.ants.push(guarda);
       }
-      if (attacker) this.damageEnemy(attacker, (dmg * this.cardMods.nestThornsPct) / 100, 'soldier');
+      this.pushToast('🏰 Guardas temporários defendem o ninho!', 'info');
     }
     if (before > 0 && this.nestHp <= 0) {
       // [O] colapso: perde 30% das folhas e a onda recomeça
@@ -393,6 +482,16 @@ export class GameEngine implements AntWorld, Scene {
 
   get boss(): Enemy | null {
     return this.enemies.find((e) => e.boss && e.hp > 0) ?? null;
+  }
+
+  /** Provocação (carta 5B) — lido pela IA dos inimigos */
+  get tauntRadius(): number {
+    return this.cardMods.tauntRadiusPx;
+  }
+
+  /** Nuvem de feromônio ativa? (render) */
+  get pheromoneZone(): boolean {
+    return this.cardMods.pheromoneZonePct > 0;
   }
 
   /** [O] buffs do rally lidos pelas formigas */
@@ -424,6 +523,62 @@ export class GameEngine implements AntWorld, Scene {
   /** [P 5A] população máxima: teto de segurança + Ninhada maior */
   populationMax(): number {
     return POPULATION.MAX + this.cardMods.populationMaxBonus;
+  }
+
+  /** Teto de slots da categoria (inicial + Mente-colmeia + baú lendário). */
+  slotCap(categoria: CardCategoria): number {
+    if (categoria === 'evolucao') return 0;
+    const bonus = categoria === 'especializacao' ? this.slotBonus.especializacao
+      : categoria === 'comportamento' ? this.slotBonus.comportamento
+      : this.slotBonus.passiva;
+    const bonusCarta = categoria === 'especializacao' ? this.cardMods.slotBonusEspecializacao : 0;
+    return Math.min(SLOTS[categoria].max, SLOTS[categoria].inicial + bonus + bonusCarta);
+  }
+
+  /** Slots usados/limite por categoria (HUD e sorteio). */
+  slotUsage(): Record<CardCategoria, { usados: number; teto: number }> {
+    return {
+      passiva: { usados: slotsUsados(this.cards, 'passiva'), teto: this.slotCap('passiva') },
+      especializacao: { usados: slotsUsados(this.cards, 'especializacao'), teto: this.slotCap('especializacao') },
+      comportamento: { usados: slotsUsados(this.cards, 'comportamento'), teto: this.slotCap('comportamento') },
+      evolucao: { usados: Object.keys(this.cards).filter((id) => cardById(id)?.categoria === 'evolucao' && (this.cards[id] ?? 0) > 0).length, teto: 0 },
+    };
+  }
+
+  /** [P 5B] baú de exploração: nasce em área NÃO revelada, longe do ninho */
+  spawnChest(): void {
+    for (let t = 0; t < 60; t++) {
+      const ang = this.rng.next() * Math.PI * 2;
+      const dist = 500 + this.rng.next() * (Math.min(this.w, this.h) / 2 - 550);
+      const x = this.nest.x + Math.cos(ang) * dist;
+      const y = this.nest.y + Math.sin(ang) * dist;
+      if (x < 60 || y < 60 || x > this.w - 60 || y > this.h - 60) continue;
+      if (this.fog.isRevealed(x, y)) continue;
+      if (this.blocked(x, y)) continue;
+      this.chests.push({ id: this.nextChestId++, x, y });
+      return;
+    }
+  }
+
+  /** Baú revelado pela exploradora: abre painel de 3 cartas (doc 03 §7). */
+  onChestFound(chest: { id: number; x: number; y: number }): void {
+    if (!this.runActive || this.gameOver) return;
+    if (this.cardPanel || this.replaceDialog) return; // espera a fila andar
+    if (!this.chests.some((c) => c.id === chest.id)) return; // já coletado
+    this.chests = this.chests.filter((c) => c.id !== chest.id);
+    this.pendingCardPanels.push('bau_comum');
+    this.openCardPanelIfNeeded();
+    writeSave(serialize(this));
+  }
+
+  /** Onda repelida: chance de baú novo no mapa (Caçadora de tesouros ajuda). */
+  onWaveCleared(): void {
+    if (this.chests.length >= 3) return;
+    const chance = 0.25 + this.cardMods.chestChanceBonus;
+    if (this.rng.chance(chance)) {
+      this.spawnChest();
+      this.pushToast('🔎 Um baú foi avistado em terras desconhecidas!', 'info');
+    }
   }
 
   /** [P 5A] Despensa: teto por recurso da carteira */
@@ -462,6 +617,60 @@ export class GameEngine implements AntWorld, Scene {
     this.xp += n * (1 + this.cardMods.efficiencyPct / 100);
   }
 
+  /**
+   * [P 5B] Produção de ovos da Rainha (doc 03 §3.3): um ovo a cada 45s
+   * (Postura acelerada reduz), custa 3 itens de comida (Coração dourado
+   * elimina o custo com fome ≥80%), Ninhada dupla pode dobrar.
+   */
+  updateQueenProduction(dt: number): void {
+    if (this.gameOver || !this.runActive) return;
+    this.cardTimers.guardCd = Math.max(0, this.cardTimers.guardCd - dt);
+    const cm = this.cardMods;
+    if (cm.productionIntervalMult >= 1 && cm.doubleBroodChance <= 0) return; // sem sistema ativo
+    const intervalo = Math.max(10, 45 * cm.productionIntervalMult);
+    this.queen.eggT += dt;
+    if (this.queen.eggT < intervalo) return;
+    this.queen.eggT = 0;
+
+    const total = this.ownedAnts.worker + this.ownedAnts.soldier + this.ownedAnts.scout;
+    if (total >= this.populationMax()) return; // sem espaço
+
+    // custo: 3 itens (grátis com Coração dourado se fome ≥80%)
+    const gratis = cm.coracaoDourado && this.queen.hunger >= this.queen.hungerMax * 0.8;
+    if (!gratis) {
+      let pagou = 0;
+      for (let i = 0; i < 3; i++) {
+        const item = nextFoodItem(this.wallet);
+        if (!item) break;
+        this.wallet[item] -= 1;
+        pagou++;
+      }
+      if (pagou < 3) {
+        // sem comida: devolve e tenta de novo em 5s
+        for (let i = 0; i < pagou; i++) {
+          const item = nextFoodItem(this.wallet);
+          if (item) this.wallet[item] += 1;
+        }
+        this.queen.eggT = intervalo - 5;
+        return;
+      }
+    }
+
+    // classe do ovo: ciclo operária → soldado → operária → exploradora
+    const ciclo: AntClass[] = ['worker', 'soldier', 'worker', 'scout'];
+    let nascimentos = 1;
+    if (cm.doubleBroodChance > 0 && this.rng.chance(cm.doubleBroodChance)) nascimentos = 2;
+    for (let i = 0; i < nascimentos; i++) {
+      const cls = ciclo[this.eggCycle % ciclo.length] as AntClass;
+      this.eggCycle++;
+      if (this.ownedAnts.worker + this.ownedAnts.soldier + this.ownedAnts.scout >= this.populationMax()) break;
+      this.ownedAnts[cls] += 1;
+      this.spawnAnt(cls);
+      this.pushWorldText(this.nest.x + (this.rng.next() - 0.5) * 50, this.nest.y - 56, '🥚', '107,221,112', 1.4);
+    }
+    this.pushBuffWave('107,221,112');
+  }
+
   private scoutSpawnI = 0;
 
   spawnAnt(cls: AntClass): void {
@@ -487,6 +696,11 @@ export class GameEngine implements AntWorld, Scene {
 
   /** [O] killAnt: carga cai no chão + fila do cemitério */
   killAnt(a: Ant): void {
+    // guardas temporários (Muralha de defensores) não renascem
+    if (a.tempT !== undefined) {
+      this.audio.play('kill');
+      return;
+    }
     for (let i = 0; i < a.carrying; i++) {
       this.resources.push({
         id: this.nextResourceId++,
@@ -587,23 +801,34 @@ export class GameEngine implements AntWorld, Scene {
     this.audio.play('levelUp');
     this.pushToast(`⭐ A colônia alcançou o nível ${level}!`, 'success');
     // [doc 03 §6.3] painel de cartas congela o mundo e espera a escolha
-    this.pendingCardPanels += gained;
+    for (let i = 0; i < gained; i++) this.pendingCardPanels.push('levelup');
     this.openCardPanelIfNeeded();
   }
 
-  /** Abre (ou mantém aberto) o próximo painel de level-up pendente. */
+  /** Abre o próximo painel pendente (level-up ou baú) — congela o mundo. */
   private openCardPanelIfNeeded(): void {
-    if (!this.runActive || this.gameOver || this.cardPanel) return;
-    if (this.pendingCardPanels <= 0) return;
-    const choices = drawPanel(this.cards, this.level);
-    this.cardPanel = { level: this.level, choices };
+    if (!this.runActive || this.gameOver || this.cardPanel || this.replaceDialog) return;
+    const origem = this.pendingCardPanels[0];
+    if (!origem) return;
+    const choices = drawPanel(this.cards, this.level, {
+      tamanho: origem === 'bau_chefe' ? 5 : 3,
+      garantia: origem === 'bau_chefe' ? 'rara' : undefined,
+      garantirEvolucao: origem === 'bau_lendario',
+      slotCaps: {
+        passiva: this.slotCap('passiva'),
+        especializacao: this.slotCap('especializacao'),
+        comportamento: this.slotCap('comportamento'),
+      },
+      classesDesbloqueadas: this.classesDesbloqueadas,
+    });
+    this.cardPanel = { level: this.level, choices, origem };
     this.clock.paused = true; // congela o mundo [doc 03 §6.3]
     this.publishHud();
   }
 
   /** Escolhe uma carta/fallback do painel aberto e aplica o efeito. */
   chooseCard(id: string): void {
-    if (!this.cardPanel || !this.runActive || this.gameOver) return;
+    if (!this.cardPanel || !this.runActive || this.gameOver || this.replaceDialog) return;
     const choice = this.cardPanel.choices.find((c) => c.id === id);
     if (!choice) return;
 
@@ -612,11 +837,46 @@ export class GameEngine implements AntWorld, Scene {
       if (!def) return;
       const atual = this.cards[choice.id] ?? 0;
       if (atual >= def.valores.length) return;
+
+      // evolução: exige receita válida e SUBSTITUI a carta base (doc 03 §5)
+      if (def.categoria === 'evolucao') {
+        const evo = evolucaoById(choice.id);
+        if (!evo) return;
+        const baseDef = cardById(evo.base);
+        if (!baseDef || (this.cards[evo.base] ?? 0) < baseDef.valores.length) return;
+        if ((this.cards[evo.suporte] ?? 0) < 1 || this.level < evo.nivelMin) return;
+        delete this.cards[evo.base];
+        this.cards[choice.id] = 1;
+        this.cardMods = cardModsFrom(this.cards);
+        this.audio.play('win');
+        this.pushToast(`✨ EVOLUÇÃO: ${def.nome}! ${evo.desc}`, 'success');
+        this.pushBuffWave(COR_EIXO[def.eixo] ?? '251,208,70');
+        this.finishPanelChoice();
+        return;
+      }
+
+      // carta NOVA em categoria cheia → diálogo de substituição (doc 03 §6)
+      if (atual === 0 && choice.requerSubstituicao) {
+        const categoria = def.categoria;
+        const opcoes = Object.entries(this.cards)
+          .filter(([cid, nv]) => nv > 0 && cardById(cid)?.categoria === categoria)
+          .map(([cid, nv]) => {
+            const c = cardById(cid)!;
+            return { id: cid, nome: c.nome, icone: c.icone, nivel: nv, nivelMax: c.valores.length };
+          });
+        if (opcoes.length > 0) {
+          this.replaceDialog = { novaId: choice.id, opcoes };
+          this.publishHud();
+          return; // aguarda escolher o que substituir (ou recusar)
+        }
+      }
+
       const prevNestMax = this.nestHpMax();
       const prevSoldierHp = this.cardMods.soldierHpBonus;
+      const prevWorkerHp = this.cardMods.workerHpBonus;
       this.cards[choice.id] = atual + 1;
       this.cardMods = cardModsFrom(this.cards);
-      this.applyCardSideEffects(choice.id, prevNestMax, prevSoldierHp);
+      this.applyCardSideEffects(choice.id, prevNestMax, prevSoldierHp, prevWorkerHp);
       this.audio.play('win');
       this.pushToast(`🃏 ${def.nome} — nível ${atual + 1}!`, 'success');
       // carta visível: onda na cor do eixo, formigas da classe brilham
@@ -626,20 +886,28 @@ export class GameEngine implements AntWorld, Scene {
       const heal = Math.round(max * 0.25);
       this.nestHp = Math.min(max, this.nestHp + heal);
       this.audio.play('win');
-      this.pushToast(`🏠 O ninho recuperou ${Math.round(this.nestHp)} de vida.`, 'success');
+      this.pushToast(`🏠 O ninho recuperou ${heal} de vida.`, 'success');
     } else if (choice.id === 'fallback_comida') {
       this.grantResource('leaf', 30);
       this.audio.play('deposit');
       this.pushToast('🍂 +30 folhas no estoque.', 'success');
+    } else if (choice.id === 'fallback_quitina') {
+      this.chitin += 1;
+      this.audio.play('win');
+      this.pushToast('🦴 +1 quitina guardada para as classes futuras.', 'success');
     } else if (choice.id === 'fallback_xp') {
       this.addXp(100);
       this.audio.play('levelUp');
       this.pushToast('📘 +100 XP!', 'success');
     }
 
-    this.pendingCardPanels = Math.max(0, this.pendingCardPanels - 1);
-    if (this.pendingCardPanels > 0) {
-      // level-ups em cascata: próximo painel já abre
+    this.finishPanelChoice();
+  }
+
+  /** Consome a escolha: fecha painel, avança a fila e salva. */
+  private finishPanelChoice(): void {
+    this.pendingCardPanels.shift();
+    if (this.pendingCardPanels.length > 0) {
       this.cardPanel = null;
       this.openCardPanelIfNeeded();
     } else {
@@ -650,8 +918,37 @@ export class GameEngine implements AntWorld, Scene {
     writeSave(serialize(this));
   }
 
+  /** Substituição confirmada: tira a antiga (reembolso 50% em XP) e põe a nova. */
+  chooseReplace(oldId: string): void {
+    if (!this.replaceDialog) return;
+    const novaId = this.replaceDialog.novaId;
+    const def = cardById(novaId);
+    const oldDef = cardById(oldId);
+    if (!def || !oldDef || (this.cards[oldId] ?? 0) <= 0) return;
+
+    // reembolso: 50% dos níveis investidos, em XP (25 XP por nível) [doc 03 §6]
+    const niveis = this.cards[oldId] ?? 0;
+    const reembolso = Math.round(niveis * 25 * 0.5 * 2); // 25 XP/nível investido
+    delete this.cards[oldId];
+    this.cards[novaId] = 1;
+    this.cardMods = cardModsFrom(this.cards);
+    this.addXp(reembolso);
+    this.replaceDialog = null;
+    this.audio.play('win');
+    this.pushToast(`♻️ ${oldDef.nome} → ${def.nome}! +${reembolso} XP de reembolso.`, 'success');
+    this.pushBuffWave(COR_EIXO[def.eixo] ?? '251,208,70');
+    this.finishPanelChoice();
+  }
+
+  /** Recusa a substituição: a carta nova é devolvida e o painel reabre. */
+  refuseReplace(): void {
+    if (!this.replaceDialog) return;
+    this.replaceDialog = null;
+    this.publishHud();
+  }
+
   /** Efeitos imediatos ao subir de nível uma carta (vida extra, etc.). */
-  private applyCardSideEffects(id: string, prevNestMax: number, prevSoldierHp: number): void {
+  private applyCardSideEffects(id: string, prevNestMax: number, prevSoldierHp: number, prevWorkerHp: number): void {
     if (id === 'paredes_grossas') {
       // o ganho de HP máximo também cura o ninho no mesmo valor
       const delta = this.nestHpMax() - prevNestMax;
@@ -670,8 +967,27 @@ export class GameEngine implements AntWorld, Scene {
         }
       }
     }
+    if (id === 'casca_dura') {
+      // coletoras vivas ganham a vida extra imediatamente
+      const delta = this.cardMods.workerHpBonus - prevWorkerHp;
+      if (delta > 0) {
+        for (const a of this.ants) {
+          if (a.cls === 'worker' && a.hp > 0) {
+            a.hp += delta;
+            a.hpMax += delta;
+          }
+        }
+      }
+    }
     if (id === 'estomago_amplo') {
       this.queen.hungerMax = Math.round(100 * this.cardMods.hungerMaxMult);
+    }
+    if (id === 'armadilha_resina') {
+      // instala as 3 armadilhas ao redor do ninho
+      this.traps = [0, 1, 2].map((i) => {
+        const ang = (i / 3) * Math.PI * 2 - Math.PI / 2;
+        return { x: this.nest.x + Math.cos(ang) * 130, y: this.nest.y + Math.sin(ang) * 130, cd: 0 };
+      });
     }
   }
 
@@ -703,10 +1019,18 @@ export class GameEngine implements AntWorld, Scene {
     }
     this.addXp(e.xp);
     this.totals.bossesKilled++;
+    // [P 5B] quitina dos chefes (Coletor de quitina dá extra)
+    const quitina = 2 + this.cardMods.chitinPerBoss;
+    this.chitin += quitina;
+    this.pushWorldText(e.x, e.y - e.scale * 0.55 - 20, `+${quitina} 🦴`, '220,170,110', 1.6);
     this.progressBoss();
     this.checkAchievements();
     this.audio.play('win');
-    this.pushToast(`🏆 ${cfg.name} derrotado! +${e.xp} XP e recursos!`, 'success');
+    this.pushToast(`🏆 ${cfg.name} derrotado! +${e.xp} XP, recursos e ${quitina} quitina!`, 'success');
+    // [P 5B] baú do chefe: 5 escolhas com 1 rara garantida; 2º chefe → lendário
+    this.bossesThisRun++;
+    this.pendingCardPanels.push(this.bossesThisRun === 2 ? 'bau_lendario' : 'bau_chefe');
+    this.openCardPanelIfNeeded();
   }
 
   onMapUnlocked(mapId: MapId): void {
@@ -725,9 +1049,11 @@ export class GameEngine implements AntWorld, Scene {
   }
 
   recomputeFogActive(): void {
+    // Mapeadoras (carta 5B): visão passiva do bando ampliada
+    const passiva = FOG.PASSIVE_RADIUS * (1 + this.cardMods.passiveRevealPct / 100);
     const sources: Array<{ x: number; y: number; r: number }> = this.ants.map((a) => ({
       x: a.x, y: a.y,
-      r: a.cls === 'scout' ? FOG.SCOUT_RADIUS : FOG.PASSIVE_RADIUS,
+      r: a.cls === 'scout' ? FOG.SCOUT_RADIUS + this.cardMods.scoutRevealBonus : passiva,
     }));
     sources.push({ x: this.nest.x, y: this.nest.y, r: FOG.NEST_RADIUS });
     this.fog.recomputeActive(sources);
@@ -832,6 +1158,8 @@ export class GameEngine implements AntWorld, Scene {
     const n = Math.round((this.maxRes[kind] ?? 0) * factor);
     for (let i = 0; i < n; i++) this.spawnResource(kind);
     this.rebuildResourceIndex();
+    // [P 5B] um baú de exploração começa escondido no mapa
+    this.spawnChest();
   }
 
   private populate(): void {
@@ -872,10 +1200,19 @@ export class GameEngine implements AntWorld, Scene {
     // [doc 03 §1] cartas são POR PARTIDA: zeram a cada run/renascimento
     this.cards = {};
     this.cardMods = emptyCardMods();
-    this.pendingCardPanels = 0;
+    this.pendingCardPanels = [];
     this.cardPanel = null;
+    this.replaceDialog = null;
     this.queenReviveUsed = false;
     this.lastCapWasteToastT = -999;
+    this.cardTimers = { swarmT: 8, acidT: 20, chargeT: 30, guardCd: 0 };
+    this.traps = [];
+    this.chests = [];
+    this.nextChestId = 1;
+    this.chitin = 0;
+    this.bossesThisRun = 0;
+    this.slotBonus = { especializacao: 0, comportamento: 0, passiva: 0 };
+    this.eggCycle = 0;
     // [O] totais e conquistas são CUMULATIVOS (persistem entre runs);
     // missões reiniciam a cada run/renascimento
     this.unlockedMaps = ['campo'];
@@ -952,11 +1289,12 @@ export class GameEngine implements AntWorld, Scene {
     const bought = this.upgrades[id] ?? 0;
     if (bought >= def.max) return false;
 
-    // [P 5A] teto de população: Ninhada maior (carta) aumenta o limite
+    // [P 5A] teto de população: Ninhada maior amplia; Turno extra só operárias
     if (id === 'antlimit' || id === 'soldier' || id === 'scout') {
       const total = this.ownedAnts.worker + this.ownedAnts.soldier + this.ownedAnts.scout;
-      if (total + 5 > this.populationMax()) {
-        this.pushToast('🐜 População máxima! (carta Ninhada maior aumenta o teto)', 'warn');
+      const teto = this.populationMax() + (id === 'antlimit' ? this.cardMods.workerPopMaxBonus : 0);
+      if (total + 5 > teto) {
+        this.pushToast('🐜 População máxima! (Ninhada maior/Turno extra aumentam o teto)', 'warn');
         return false;
       }
     }
@@ -1392,7 +1730,21 @@ export class GameEngine implements AntWorld, Scene {
       },
       rebirths: this.rebirths,
       score: this.score,
-      cardPanel: this.cardPanel ? { level: this.cardPanel.level, choices: [...this.cardPanel.choices] } : null,
+      chitin: this.chitin,
+      cardPanel: this.cardPanel
+        ? { level: this.cardPanel.level, origem: this.cardPanel.origem, choices: [...this.cardPanel.choices] }
+        : null,
+      cards: Object.entries(this.cards)
+        .filter(([, nv]) => nv > 0)
+        .map(([id, nv]) => {
+          const c = cardById(id);
+          return c
+            ? { id, nome: c.nome, icone: c.icone, raridade: c.raridade, nivel: nv, nivelMax: c.valores.length, categoria: c.categoria, eixo: c.eixo }
+            : null;
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null),
+      slots: this.slotUsage(),
+      replaceDialog: this.replaceDialog ? { novaId: this.replaceDialog.novaId, opcoes: [...this.replaceDialog.opcoes] } : null,
     });
   }
 }

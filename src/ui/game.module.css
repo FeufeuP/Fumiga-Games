@@ -150,3 +150,75 @@
   border-radius: 6px;
   padding: 6px 10px;
 }
+
+/* ── 5B: aba CARTAS do pause ────────────────────────────────────── */
+.cartasLista {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+  min-width: 300px;
+}
+
+.cartasResumo {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--c-dourado);
+  margin: 0 0 4px;
+}
+
+.cartasVazio {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.cartaRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 2px solid var(--c-contorno);
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+
+.cartaIcone {
+  font-size: 18px;
+}
+
+.cartaNome {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  flex: 1;
+  text-align: left;
+}
+
+.cartaPips {
+  display: flex;
+  gap: 4px;
+}
+
+.cartaPipOn,
+.cartaPipOff {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 2px solid var(--c-contorno);
+}
+
+.cartaPipOn {
+  background: var(--c-dourado);
+}
+
+.cartaPipOff {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.cartaRar {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  min-width: 74px;
+  text-align: right;
+}

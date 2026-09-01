@@ -82,6 +82,11 @@ export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRall
             {RESOURCES[k].icon} {hud.resources[k] ?? 0}
           </span>
         ))}
+        {hud.chitin > 0 && (
+          <span className={styles.res} title="Quitina — moeda das classes futuras">
+            🦴 {hud.chitin}
+          </span>
+        )}
         <span className={styles.explored}>EXPLORADO {hud.exploredPct}%</span>
       </div>
 

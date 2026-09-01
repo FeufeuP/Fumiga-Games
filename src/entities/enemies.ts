@@ -101,9 +101,11 @@ export interface EnemyHost {
   readonly w: number;
   readonly h: number;
   readonly nest: { x: number; y: number };
-  readonly ants: ReadonlyArray<{ id: number; x: number; y: number; hp: number }>;
+  readonly ants: ReadonlyArray<{ id: number; x: number; y: number; hp: number; cls: string }>;
   readonly props: readonly Prop[];
   readonly rng: { next(): number; float(a: number, b: number): number };
+  /** Provocação (carta 5B): raio em que soldados puxam inimigos (0 = off) */
+  readonly tauntRadius: number;
   damageAnt(antId: number, dmg: number, by: EnemyKind, fromX?: number, fromY?: number): void;
   damageNest(dmg: number, fromX?: number, fromY?: number): void;
 }
@@ -163,6 +165,11 @@ function move(e: Enemy, host: EnemyHost, dt: number, forced: boolean): void {
 
 export function updateEnemy(e: Enemy, host: EnemyHost, dt: number): void {
   if (e.hp <= 0) return;
+  // Armadilha de resina (carta 5B): preso não anda nem ataca
+  if (e.rootT && e.rootT > 0) {
+    e.rootT -= dt;
+    return;
+  }
   e.attackCd = Math.max(0, e.attackCd - dt);
   const cd = e.boss ? ENEMY_COMBAT.BOSS_ATTACK_CD_SEC : ENEMY_COMBAT.ATTACK_CD_SEC;
   const extent = e.r;
@@ -172,6 +179,27 @@ export function updateEnemy(e: Enemy, host: EnemyHost, dt: number): void {
     const reach = ENEMY_COMBAT.NEST_REACH_PAD + extent + 8;
     const dNest = Math.hypot(host.nest.x - e.x, host.nest.y - e.y);
     e.dir = host.nest.x >= e.x ? 1 : -1;
+    // Provocação (carta 5B): soldado perto puxa o inimigo para longe do ninho
+    if (host.tauntRadius > 0 && dNest > reach) {
+      let taunter: { id: number; x: number; y: number } | null = null;
+      let bd = host.tauntRadius;
+      for (const a of host.ants) {
+        if (a.hp <= 0 || a.cls !== 'soldier') continue;
+        const d = Math.hypot(a.x - e.x, a.y - e.y);
+        if (d < bd) { bd = d; taunter = a; }
+      }
+      if (taunter) {
+        const dT = Math.hypot(taunter.x - e.x, taunter.y - e.y);
+        if (dT > BEHAVIOR.ATTACK_RANGE_PAD && e.attackCd <= 0) {
+          steer(e, taunter.x, taunter.y, dt, 5);
+          move(e, host, dt, true);
+        } else if (e.attackCd <= 0) {
+          e.attackCd = cd;
+          host.damageAnt(taunter.id, e.dmg, e.kind, e.x, e.y);
+        }
+        return;
+      }
+    }
     if (dNest > reach) {
       // ataca formiga apenas se ela estiver colada no corpo (≤12)
       let ant: { id: number; x: number; y: number } | null = null;

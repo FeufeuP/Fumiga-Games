@@ -73,9 +73,22 @@ export function revealRadiusOf(cls: AntClass): number {
 export function antSpeed(a: Ant, w: AntWorld): number {
   // [O] base 82 (scout ×1.35) · upgrade speed +10%/nível · carregando ×0.9
   let v = ANTS[a.cls].speed * w.mods.speedMult;
-  // cartas 5A: Passo firme (todas) + Divisão de trabalho + Passo leve (coletora)
-  const pct = w.cardMods.speedPct + w.cardMods.efficiencyPct +
-    (a.cls === 'worker' ? w.cardMods.workerSpeedPct : 0);
+  // cartas: Passo firme + Divisão de trabalho + Mente-colmeia + Passo leve +
+  // Pernas longas (exploradora) + Colônia unida (aliado ≤80px)
+  let pct = w.cardMods.speedPct + w.cardMods.efficiencyPct + w.cardMods.colonyAllPct;
+  if (a.cls === 'worker') pct += w.cardMods.workerSpeedPct;
+  if (a.cls === 'scout') pct += w.cardMods.scoutSpeedPct;
+  if (a.nearAlly) pct += w.cardMods.nearAllyPct;
+  // Passo interno: acelera perto do ninho (≤180px)
+  if (a.cls === 'worker' && w.cardMods.nearNestSpeedPct > 0) {
+    const dNest = Math.hypot(a.x - w.nest.x, a.y - w.nest.y);
+    if (dNest <= 180) pct += w.cardMods.nearNestSpeedPct;
+  }
+  // Nuvem de feromônio: zona ao redor do ninho (raio 190px)
+  if (w.cardMods.pheromoneZonePct > 0) {
+    const dNest = Math.hypot(a.x - w.nest.x, a.y - w.nest.y);
+    if (dNest <= 190) pct += w.cardMods.pheromoneZonePct;
+  }
   if (pct !== 0) v *= 1 + pct / 100;
   if (a.carrying > 0) v *= ANT_SPRITE.CARRY_SLOWDOWN;
   // [O] rally COLETA!: operárias ×1.6 por 8s
@@ -86,8 +99,25 @@ export function antSpeed(a: Ant, w: AntWorld): number {
 }
 
 export function antDamage(a: Ant, w: AntWorld): { dmg: number; crit: boolean } {
-  // Divisão de trabalho (carta 5A) + Golpe preciso (5B: +crítico)
-  const base = ANTS[a.cls].dmg * w.mods.dmgMult * (1 + w.cardMods.efficiencyPct / 100);
+  // Divisão de trabalho + Mente-colmeia + Colônia unida
+  let pct = w.cardMods.efficiencyPct + w.cardMods.colonyAllPct;
+  if (a.nearAlly) pct += w.cardMods.nearAllyPct;
+  // Fúria da colônia: +dano por formiga viva (com teto)
+  if (w.cardMods.furyPerAntPct > 0) {
+    const vivas = w.ants.reduce((n, x) => n + (x.hp > 0 ? 1 : 0), 0);
+    pct += Math.min(w.cardMods.furyCapPct, vivas * w.cardMods.furyPerAntPct);
+  }
+  // Feromônio de fúria: ninho em perigo enfurece a colônia
+  const nest = w.nest as { x: number; y: number; hp?: number; hpMax?: number };
+  if (w.cardMods.nestLowHpFuryPct > 0 && nest.hpMax && nest.hp !== undefined) {
+    if (nest.hp < nest.hpMax * 0.3) pct += w.cardMods.nestLowHpFuryPct;
+  }
+  // Nuvem de feromônio: +dano (metade do bônus de velocidade) na zona do ninho
+  if (w.cardMods.pheromoneZonePct > 0) {
+    const dNest = Math.hypot(a.x - w.nest.x, a.y - w.nest.y);
+    if (dNest <= 190) pct += w.cardMods.pheromoneZonePct * 0.5;
+  }
+  const base = ANTS[a.cls].dmg * w.mods.dmgMult * (1 + pct / 100);
   const crit = w.rng.chance(Math.min(0.9, w.mods.critChance + w.cardMods.critBonus));
   // Mandíbulas afiadas (carta 5A): bônus FLAT de soldado, fora do crit
   const flat = a.cls === 'soldier' ? w.cardMods.soldierDmgBonus : 0;
@@ -144,10 +174,20 @@ function wanderRevealed(a: Ant, w: AntWorld, dt: number, ahead: number, turn: nu
 export function updateWorker(a: Ant, w: AntWorld, dt: number): void {
   const speed = antSpeed(a, w);
   // Faro apurado (carta 5A): +px de detecção
-  const detect = BEHAVIOR.WORKER_DETECT * w.mods.visionMult + w.cardMods.workerDetectBonus;
+  let detect = BEHAVIOR.WORKER_DETECT * w.mods.visionMult + w.cardMods.workerDetectBonus;
+  // Sentido de recurso (carta 5B): enxerga recursos na área revelada toda
+  if (w.cardMods.workerDetectAnywhere) detect = 1e9;
   // Mochila (carta 5A): +capacidade de carga
   const cap = w.mods.carryCap + w.cardMods.workerCarryBonus;
   a.attackCd = Math.max(0, a.attackCd - dt);
+  // Instinto de retorno (carta 5B): inimigo perto → volta para casa
+  if (w.cardMods.workerAutoFleePx > 0 && a.state !== 'returnNest' && a.state !== 'harvest') {
+    const perigo = w.nearestVisibleEnemy(a.x, a.y, w.cardMods.workerAutoFleePx);
+    if (perigo) {
+      a.state = 'returnNest';
+      a.targetResId = null;
+    }
+  }
 
   // [O] carregando: pega mais se der, senão volta ao ninho
   if (a.carrying > 0) {

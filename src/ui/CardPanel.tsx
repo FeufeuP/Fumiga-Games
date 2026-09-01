@@ -31,6 +31,7 @@ function Card({ choice, index, onChoose }: {
 }): React.ReactNode {
   const r = RARIDADES[choice.raridade];
   const sinergia = choice.tipo === 'carta' && choice.sinergia;
+  const substitui = choice.tipo === 'carta' && choice.requerSubstituicao;
   return (
     <button
       type="button"
@@ -46,6 +47,10 @@ function Card({ choice, index, onChoose }: {
         {r.nome}
       </span>
       {sinergia && <span className={styles.sinergiaTag}>✦ SINERGIA</span>}
+      {substitui && <span className={styles.substituiTag}>♻ TROCA</span>}
+      {choice.tipo === 'carta' && choice.evolucao && (
+        <span className={styles.evoTag}>✨ EVOLUÇÃO</span>
+      )}
       <span className={styles.icone}>{choice.icone}</span>
       <span className={styles.nome}>{choice.nome}</span>
       {choice.tipo === 'carta' ? (
@@ -80,11 +85,22 @@ export default function CardPanel({ engine, hud }: Props): React.ReactNode {
 
   if (!panel) return null;
 
+  const titulo =
+    panel.origem === 'bau_lendario' ? '✨ BAÚ LENDÁRIO!'
+      : panel.origem === 'bau_chefe' ? '🏆 BAÚ DO CHEFE!'
+      : panel.origem === 'bau_comum' ? '🎁 BAÚ ENCONTRADO!'
+      : `⭐ NÍVEL ${panel.level}!`;
+  const sub =
+    panel.origem === 'bau_lendario' ? 'O 2º chefe deixou algo especial'
+      : panel.origem === 'bau_chefe' ? 'Escolha uma de cinco recompensas'
+      : panel.origem === 'bau_comum' ? 'A exploradora achou um tesouro'
+      : 'A colônia cresceu — escolha uma recompensa';
+
   return (
     <div className={styles.overlay}>
       <div className={styles.panel}>
-        <h2 className={styles.titulo}>⭐ NÍVEL {panel.level}!</h2>
-        <p className={styles.subtitulo}>A colônia cresceu — escolha uma recompensa</p>
+        <h2 className={styles.titulo}>{titulo}</h2>
+        <p className={styles.subtitulo}>{sub}</p>
         <div className={styles.cartas}>
           {choices.map((c, i) => (
             <Card key={c.id} choice={c} index={i} onChoose={(id) => engine.chooseCard(id)} />
