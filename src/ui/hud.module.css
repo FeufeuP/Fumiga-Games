@@ -60,6 +60,26 @@
 }
 
 /* ── onda/chefe ───────────────────────────────────────────── */
+.advanceBtn {
+  pointer-events: auto;
+  background: #241d12;
+  border: 2px solid #6d5426;
+  color: #fde056;
+  font-family: "'Courier New', monospace";
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.advanceBtn:hover {
+  filter: brightness(1.25);
+}
+.advanceBtn:active {
+  transform: scale(0.96);
+}
+
 .center {
   position: absolute;
   top: 10px;

@@ -48,6 +48,7 @@ function makeHost(ants: Array<{ id: number; x: number; y: number; hp: number }> 
     h: 2400,
     nest: { x: 1700, y: 1248 },
     ants,
+    props: [],
     rng: { next: () => 0.5, float: (a: number, b: number) => (a + b) / 2 },
     damageAnt(id: number, dmg: number) { h.antDamage.push({ id, dmg }); },
     damageNest(dmg: number) { h.nestDamage.push(dmg); },

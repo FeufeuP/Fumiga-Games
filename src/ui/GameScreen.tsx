@@ -21,6 +21,7 @@ interface Props {
 export default function GameScreen({ engine, hud }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef({ down: false, dragged: false, x: 0, y: 0 });
+  const tapRef = useRef<{ lastAt: number; pending: number }>({ lastAt: 0, pending: 0 });
   const [modal, setModal] = useState<'none' | 'shop' | 'maps' | 'pause'>('none');
 
   const openPause = (): void => {
@@ -81,8 +82,23 @@ export default function GameScreen({ engine, hud }: Props) {
     if (d.dragged) return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const world = engine.camera.toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    // [O registerTap] toque no ninho → interior; toque simples chama
+    // exploradoras; toque duplo (≤320ms) chama soldados.
     if (engine.clickWorld(world.x, world.y) === 'interior') {
       engine.enterInterior();
+      return;
+    }
+    const now = performance.now();
+    const t = tapRef.current;
+    if (now - t.lastAt < 320) {
+      t.lastAt = 0;
+      window.clearTimeout(t.pending);
+      engine.callSoldiers(world.x, world.y);
+    } else {
+      t.lastAt = now;
+      t.pending = window.setTimeout(() => {
+        engine.callScouts(world.x, world.y);
+      }, 320);
     }
   };
 
@@ -102,6 +118,7 @@ export default function GameScreen({ engine, hud }: Props) {
         onOpenMaps={() => setModal('maps')}
         onRallyAttack={() => engine.rallyAttack()}
         onRallyCollect={() => engine.rallyCollect()}
+        onAdvanceWave={() => engine.advanceWave()}
       />
       {!hud.gameOver && <CameraControls engine={engine} hud={hud} onOpenPause={openPause} />}
       {modal === 'shop' && !hud.gameOver && (

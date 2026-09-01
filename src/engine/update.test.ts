@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { MAPS, WAVES, type MapId, type ResourceKind } from '../core/constants';
+import { ENEMIES, MAPS, WAVES, type MapId, type ResourceKind } from '../core/constants';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
 import { FogOfWar } from './fogOfWar';
@@ -8,7 +8,7 @@ import { resetEnemyIds } from '../entities/enemies';
 import { createQueenState } from '../systems/queen';
 import { modsFrom, emptyUpgrades } from '../systems/shop';
 import { generateWorld } from '../world/world';
-import type { Ant, AntClass, Enemy, ResourceNode, Toast, WaveState } from '../core/types';
+import type { Ant, AntClass, Enemy, Prop, ResourceNode, Toast, WaveState } from '../core/types';
 import { stepSimulation, makeBoss, makeWaveEnemy, type SimHost } from './update';
 
 class MockHost implements SimHost {
@@ -48,13 +48,20 @@ class MockHost implements SimHost {
   bossThrowT = 0;
   smashFx: Array<{ x: number; y: number; t: number }> = [];
   shake = 0;
+  frontierR = 96;
+  frontierT = 0;
+  tapMarks: Array<{ x: number; y: number; t: number; color: string }> = [];
   regenT = 0.8;
   maxRes: Partial<Record<ResourceKind, number>> = { leaf: 100 };
+  props: Prop[] = [];
 
   constructor() {
     this.fog = new FogOfWar(this.w, this.h);
     const world = generateWorld('campo');
-    this.resources = world.resources;
+    this.props = world.props;
+    this.fog.reveal(this.nest.x, this.nest.y, 260);
+    // semeia recursos iniciais como o motor [O]: revelados, ≥170px do ninho
+    for (let i = 0; i < 15; i++) this.spawnResource('leaf');
     resetAntIds();
     resetEnemyIds();
   }
@@ -77,6 +84,8 @@ class MockHost implements SimHost {
     return best;
   }
   nearestVisibleEnemy(): Enemy | null { return null; }
+  enemyExtent(e: Enemy): number { return e.scale / 2; }
+  removeResource(id: number): void { this.resources = this.resources.filter((r) => r.id !== id); }
   damageEnemy(e: Enemy, dmg: number): void { e.hp -= dmg; if (e.hp <= 0) this.xp += e.xp; }
   antCount(cls: AntClass): number { return this.ants.filter((a) => a.cls === cls).length; }
   playSfx(): void { /* mock */ }
@@ -91,10 +100,19 @@ class MockHost implements SimHost {
   }
   onAntRespawned(): void { /* mock */ }
   spawnResource(kind: ResourceKind): void {
-    this.resources.push({
-      id: 90000 + this.resources.length, kind,
-      x: this.nest.x + 200, y: this.nest.y + 200, amount: 1, phase: 0,
-    });
+    // nasce no anel revelado ao redor do ninho (como o motor)
+    for (let t = 0; t < 120; t++) {
+      const ang = this.rng.next() * Math.PI * 2;
+      const dist = 170 + this.rng.next() * 88;
+      const x = this.nest.x + Math.cos(ang) * dist;
+      const y = this.nest.y + Math.sin(ang) * dist;
+      if (!this.fog.isRevealed(x, y)) continue;
+      this.resources.push({
+        id: 90000 + this.resources.length, kind,
+        x, y, amount: 1, phase: this.rng.next() * Math.PI * 2,
+      });
+      return;
+    }
   }
   spawnWaveEnemy(power?: number): void { this.enemies.push(makeWaveEnemy(this, power)); }
   spawnBoss(): void { this.enemies.push(makeBoss(this)); }
@@ -150,7 +168,8 @@ describe('ciclo de ondas (20s combate / 90s calmaria)', () => {
     expect(boss?.hp).toBe(MAPS.campo.boss.hp);
     const escorts = host.enemies.filter((e) => e.wave && !e.boss);
     expect(escorts.length).toBe(2);
-    expect(escorts.every((e) => e.hpMax <= escorts[0]!.hpMax * 1.01)).toBe(true);
+    // [O] escoltas com poder 0.5 — a espécie é sorteada por inimigo
+    expect(escorts.every((e) => e.hpMax === Math.round(ENEMIES[e.kind].hp * 0.5))).toBe(true);
   });
 });
 
@@ -169,7 +188,9 @@ describe('simulação integrada', () => {
     const host = new MockHost();
     host.spawnAnt('worker');
     host.queen.hunger = 2;
-    // sem recursos na carteira: ela definha
+    // mundo sem recursos e sem regeneração: ela definha
+    host.resources = [];
+    host.maxRes = {};
     for (let i = 0; i < 30 * 60 && !host.gameOver; i++) stepSimulation(host, 1 / 60);
     expect(host.gameOver).toBe(true);
   });

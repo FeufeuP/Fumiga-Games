@@ -13,7 +13,8 @@ export interface Vec2 { x: number; y: number }
 
 export type AntState =
   | 'idle' | 'gotoResource' | 'harvest' | 'returnNest'
-  | 'explore' | 'patrol' | 'seekEnemy' | 'attack' | 'returnHome';
+  | 'explore' | 'patrol' | 'seekEnemy' | 'attack' | 'returnHome'
+  | 'command' | 'flee';
 
 export interface Ant {
   id: number;
@@ -38,6 +39,19 @@ export interface Ant {
   vx: number;             // impulso horizontal do knockback
   vy: number;
   vz: number;
+  // ── IA fiel [O]: direção/medo/comando ──────────────────────────
+  angle: number;          // rumo atual (rad)
+  wanderAngle: number;    // vagueio: ângulo alvo
+  wanderT: number;        // vagueio: tempo até próxima decisão
+  fearT: number;          // fugindo (0.9s após dano, não-soldados)
+  fearAx: number;         // direção da fuga
+  fearAy: number;
+  stunT: number;          // atordoado ao aterrissar do smash (0.9s)
+  scoutA: number;         // exploradora: ângulo no anel de fronteira
+  scoutR: number;         // exploradora: multiplicador do raio de fronteira
+  scoutTx: number;        // exploradora: alvo atual
+  scoutTy: number;
+  scoutDecideT: number;   // exploradora: tempo até repensar alvo
 }
 
 export type EnemyState = 'wander' | 'chase' | 'attack';
@@ -65,6 +79,8 @@ export interface Enemy {
   attackCd: number;
   walkPhase: number;
   seed: number;
+  angle: number;          // rumo atual (rad) [O]
+  patrolT: number;        // vagueio ambiente [O]
 }
 
 export interface ResourceNode {
@@ -129,6 +145,8 @@ export interface Scene {
   /** efeitos do ciclo A [O] */
   readonly smashFx: ReadonlyArray<{ x: number; y: number; t: number }>;
   readonly shake: number;
+  /** marcas de toque: comandos CHAMAR EXPLORADORAS/SOLDADOS [O] */
+  readonly tapMarks: ReadonlyArray<{ x: number; y: number; t: number; color: string }>;
 }
 
 /** Contrato entre motor e comportamentos (testável com mock). */
@@ -136,11 +154,15 @@ export interface AntWorld {
   readonly w: number;
   readonly h: number;
   readonly nest: { x: number; y: number };
+  readonly ants: readonly Ant[];
+  readonly props: readonly Prop[];
   enemies: readonly Enemy[];
   readonly resources: readonly ResourceNode[];
   readonly fog: FogOfWar;
   readonly rng: Rng;
   readonly events: EventBus;
+  /** raio do anel de fronteira explorado [O computeFrontier] */
+  readonly frontierR: number;
   /** multiplicadores derivados das melhorias compradas */
   readonly mods: AntMods;
   /** buffs momentâneos do rally [O] */
@@ -149,7 +171,12 @@ export interface AntWorld {
   takeResource(kind: ResourceKind, n: number): boolean;
   deposit(units: number, kind: ResourceKind, by: AntClass): void;
   nearestRevealedResource(x: number, y: number, maxDist: number): ResourceNode | null;
+  /** [O nearestEnemyBody] inimigo revelado mais próximo (distância ao corpo) */
   nearestVisibleEnemy(x: number, y: number, maxDist: number): Enemy | null;
+  /** [O enemyExtent] extensão (raio de corpo) do inimigo */
+  enemyExtent(e: Enemy): number;
+  /** [O pickup] remove o nó de recurso do mapa */
+  removeResource(id: number): void;
   damageEnemy(e: Enemy, dmg: number, by: AntClass): void;
   antCount(cls: AntClass): number;
   /** efeitos sonoros (motor de áudio) */

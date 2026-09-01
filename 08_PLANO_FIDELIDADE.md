@@ -197,3 +197,71 @@ Card: NIVEL · RENASC · FORMIGAS · FOLHAS + barras NINHO e RAINHA
 - **B7 ✅** `engine.resetProgress()` remove o save e zera conquistas/missoes/renasc;
   `exitGame()` = Android.exit → window.close → toast; `toggleFullscreen()` com toasts [O].
 - Verificação: `tsc --noEmit` limpo · 62/62 testes · `vite build` ok.
+
+---
+
+## Apêndice E — Correção de bugs das mecânicas principais (01/09/2026) ✅
+
+Diagnóstico headless (motor real simulado a 60 Hz) revelou que as mecânicas
+principais estavam quebradas. Causas-raiz encontradas comparando com o bundle:
+
+### Bugs críticos corrigidos
+1. **Inimigos ambientes inexistentes no original** — criávamos 20 inimigos no
+   início (contagens de `Tt[].enemies`); no bundle esse array só alimenta
+   `waveKinds()` (espécies das ONDAS). Resultado: massacre do ninho em ~30s.
+   → Removida a fauna ambiente (`world.ts`); inimigos só vêm das ondas.
+2. **Soldados cegos** — `nearestVisibleEnemy` usava a névoa ATIVA (raio de
+   render); o original usa `isRevealed` (névoa persistente) e X0=280 de aggro.
+   → Corrigido + defesa do ninho: engaja inimigos revelados a 340+extensão.
+3. **Recursos nunca visíveis** — espalhávamos 100 nós pelo mapa inteiro
+   (irrevelados). No bundle, recursos iniciais nascem NA ÁREA REVELADA
+   (anel do ninho revelado a 260px, ≥170px do centro), contagem
+   `maxRes × exploredFactor` (piso 15% = 15 nós no Campo).
+   → `seedWorld()` fiel + revelação inicial 260px [O revealInstant].
+4. **Coleta lentíssima e incapaz** — colheita de 0.8s/unidade (invenção [P]) e
+   volta ao ninho a cada 1 item. No bundle: pickup INSTANTÂNEO
+   (dist < R0+Ii/2, nó removido) e a operária continua coletando até a
+   capacidade (`carry.length < capacity`).
+5. **IA das formigas reescrita** [O updateAnt]:
+   - Operária: vagueia DENTRO do revelado (wanderAngle, muda rumo ao apontar
+     para sombra), auto-defesa (GA=110), fuga ao tomar dano (fearT=0.9s),
+     deposita a 28px e **cura-se por completo ao entregar** (`hp=maxHp`).
+   - Soldado: engaja revelados (X0=280) ou defende o ninho (340+ext),
+     movimento de enxame (separação 40 + coesão 44 + alinhamento 66).
+   - Exploradora: anel de fronteira expansivo (frontierR cresce 1 célula a
+     cada 0.6s quando o anel está revelado), ângulos distribuídos por ordem
+     de nascimento, separação entre exploradoras (60px), desvio de inimigos
+     (140px), auto-defesa (BA=120).
+   - **Só a exploradora revela névoa** (fogCell×2) — no bundle operárias e
+     soldados não revelam nada.
+6. **IA dos inimigos fiel** [O updateEnemy]: onda marcha ao ninho e ataca
+   formiga só se colada (corpo ≤12); ataque cd 0.9s (chefe 1.1s); ninho a
+   40+ext+8; sem sombra para nascer → **borda do mundo** (não mais a 500px
+   do ninho!); obstáculos empurram e desviam o rumo.
+7. **Chefe nasce longe do ninho** [O]: ponto livre ≥240 das bordas e
+   ≥720 do ninho (não mais na sombra).
+8. **Colapso do ninho** [O]: perde 30% das folhas, onda reinicia (20s),
+   shake 2 — antes só mostrava toast.
+9. **Rainha** alimentada pela contagem de operárias PERTENCENTES [O
+   state.ants.worker], não vivas.
+10. **Regen do ninho** bloqueado só por inimigo REVELADO a 320px [O
+    enemyNearNest com isRevealed].
+11. **Smash do chefe**: arrasto horizontal no ar (×(1−1.6·dt)) e stun de
+    0.9s ao aterrissar [O].
+12. **Armadura com piso 50%** [O max(0.5, 1−0.1·n)].
+13. **Comandos de toque** [O registerTap]: toque no ninho (<90px) → interior;
+    toque simples → CHAMAR EXPLORADORAS; toque duplo (≤320ms) → CHAMAR
+    SOLDADOS; marca verde/vermelha no mundo (tapMarks).
+14. **ADIANTAR ONDA** [O advanceWave]: botão na contagem "PROXIMA ONDA EM
+    Xs" dá 3+N+1 recursos e zera a espera.
+15. **Começo fiel**: 1 operária + 1 soldado + 1 exploradora [O gs()], 0
+    recursos na carteira, formigas nascem a 8–22px do ninho.
+16. visionScale exato (1+0.15·n+0.12·r), DEPOSIT_RADIUS 28, save com os novos
+    campos da IA e fronteira recalculada no load.
+
+### Validação (motor real, 60 Hz)
+- 5 seeds × 300s: 0–2 mortes, rainha viva e alimentada, ninho intacto,
+  ondas 1–2 repelidas (6 kills), 29–36% explorado, sem death spiral.
+- 3 seeds × 600s com compras automáticas: 49–59 formigas, nível 16–17,
+  ondas 1–5 repelidas, ninho cheio, rainha viva.
+- `tsc --noEmit` limpo · **72/72 testes** (11 novos de integração) · build ok.

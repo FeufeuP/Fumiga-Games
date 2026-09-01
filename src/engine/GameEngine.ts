@@ -4,8 +4,8 @@
  * chefes, fome da Rainha, desbloqueio de mapas por exploração.
  */
 import {
-  ANTS, BOSS, ECONOMY, ENGINE, FOG, MAPS, NEST, POPULATION, RESOURCES, RALLY,
-  RESOURCE_REGEN, SAVE, SCORE, UPGRADES, WAVES, XP,
+  ANTS, BEHAVIOR, BOSS, ECONOMY, ENGINE, FOG, MAPS, NEST, NEST_COLLAPSE,
+  POPULATION, RESOURCES, RALLY, RESOURCE_REGEN, SAVE, SCORE, UPGRADES, WAVES, XP,
   nesthpCost, upgradeCost,
   type AntClass, type EnemyKind, type MapId, type ResourceKind,
 } from '../core/constants';
@@ -134,6 +134,11 @@ export class GameEngine implements AntWorld, Scene {
   bossThrowT = 0;
   smashFx: Array<{ x: number; y: number; t: number }> = [];
   shake = 0;
+  /** [O computeFrontier] anel de fronteira que as exploradoras expandem */
+  frontierR = FOG.CELL * 2;
+  frontierT = 0;
+  /** [O tapMarks] marcas do comando CHAMAR (toque/toque duplo) */
+  tapMarks: Array<{ x: number; y: number; t: number; color: string }> = [];
   regenT = RESOURCE_REGEN.INTERVAL_SEC;
   nextResourceId = 100000;
   maxRes: Partial<Record<ResourceKind, number>> = {};
@@ -207,19 +212,30 @@ export class GameEngine implements AntWorld, Scene {
     return best;
   }
 
+  /** [O nearestEnemyBody] inimigo REVELADO mais próximo (distância ao corpo). */
   nearestVisibleEnemy(x: number, y: number, maxDist: number): Enemy | null {
     let best: Enemy | null = null;
-    let bestD2 = maxDist * maxDist;
+    let bestD = maxDist;
     for (const e of this.enemies) {
       if (e.hp <= 0) continue;
-      if (!this.fog.isActive(e.x, e.y)) continue;
-      const d2 = (e.x - x) ** 2 + (e.y - y) ** 2;
-      if (d2 < bestD2) {
-        bestD2 = d2;
+      if (!this.fog.isRevealed(e.x, e.y)) continue;
+      const d = Math.max(0, Math.hypot(e.x - x, e.y - y) - this.enemyExtent(e));
+      if (d < bestD) {
+        bestD = d;
         best = e;
       }
     }
     return best;
+  }
+
+  /** [O enemyExtent] extensão do corpo (scale/2) */
+  enemyExtent(e: Enemy): number {
+    return e.scale / 2;
+  }
+
+  /** [O pickup] remove o nó de recurso do mapa */
+  removeResource(id: number): void {
+    this.resources = this.resources.filter((r) => r.id !== id);
   }
 
   damageEnemy(e: Enemy, dmg: number, _by: AntClass): void {
@@ -253,17 +269,41 @@ export class GameEngine implements AntWorld, Scene {
 
   // ── EnemyHost (IA dos inimigos) ──────────────────────────────────
 
-  damageAnt(antId: number, dmg: number, _by: EnemyKind): void {
+  damageAnt(antId: number, dmg: number, _by: EnemyKind, fromX?: number, fromY?: number): void {
     const a = this.ants.find((x) => x.id === antId);
     if (!a || a.hp <= 0) return;
-    a.hp -= dmg * (1 - this.mods.armorReduction);
+    // [O] armadura com piso de 50%
+    a.hp -= dmg * Math.max(0.5, 1 - this.mods.armorReduction);
+    // [O] não-soldados fogem por 0.9s na direção contrária
+    if (a.cls !== 'soldier' && fromX !== undefined && fromY !== undefined) {
+      const d = Math.hypot(a.x - fromX, a.y - fromY) || 1;
+      a.fearAx = ((a.x - fromX) / d) * 120;
+      a.fearAy = ((a.y - fromY) / d) * 120;
+      a.fearT = BEHAVIOR.FLEE_SEC;
+    }
   }
 
-  damageNest(dmg: number): void {
+  damageNest(dmg: number, _fromX?: number, _fromY?: number): void {
+    if (this.nestHp <= 0) return; // já colapsado [O]
     const before = this.nestHp;
     this.nestHp = Math.max(0, this.nestHp - dmg);
+    this.shake = Math.max(this.shake, 0.7);
     if (before > 0 && this.nestHp <= 0) {
-      this.pushToast('O formigueiro entrou em colapso!', 'danger');
+      // [O] colapso: perde 30% das folhas e a onda recomeça
+      const lost = Math.floor((this.wallet.leaf ?? 0) * NEST_COLLAPSE.LEAF_LOSS_FRAC);
+      this.wallet.leaf = (this.wallet.leaf ?? 0) - lost;
+      this.shake = 2;
+      if (this.wave.active) {
+        this.wave.tSec = WAVES.COMBAT_SEC;
+        this.wave.spawned = 0;
+        this.wave.spawnT = 0;
+      }
+      this.pushToast(
+        lost > 0
+          ? `O formigueiro entrou em colapso! Perdeu ${lost} folhas.`
+          : 'O formigueiro entrou em colapso!',
+        'warn',
+      );
     }
   }
 
@@ -299,13 +339,25 @@ export class GameEngine implements AntWorld, Scene {
     return NEST.HP_MAX + (this.upgrades.nesthp ?? 0) * NEST.HP_PER_UPGRADE;
   }
 
+  private scoutSpawnI = 0;
+
   spawnAnt(cls: AntClass): void {
     const ang = this.rng.next() * Math.PI * 2;
-    const dist = 24 + this.rng.next() * 36;
+    const dist = 8 + this.rng.next() * 14; // [O] nasce colada ao ninho
     const x = Math.min(this.w - 12, Math.max(12, this.nest.x + Math.cos(ang) * dist));
     const y = Math.min(this.h - 12, Math.max(12, this.nest.y + Math.sin(ang) * dist));
     const ant = createAnt(cls, x, y, () => this.rng.next());
-    ant.hp = ant.hpMax = Math.round(ANTS[cls].hp * this.mods.hpMult);
+    // [O] hp = pb × (1 + 0.15·hpboost + 0.01·At(r).hpPct)
+    const hpPct = this.mods.hpMult;
+    ant.hp = ant.hpMax = Math.round(ANTS[cls].hp * hpPct);
+    ant.angle = ant.wanderAngle = ang;
+    if (cls === 'scout') {
+      // [O] exploradoras cobrem ângulos diferentes do anel de fronteira
+      const n = Math.max(1, this.ownedAnts.scout + 1);
+      ant.scoutA = ((this.scoutSpawnI % n) / n) * Math.PI * 2 + (this.rng.next() - 0.5) * 0.35;
+      ant.scoutR = 0.95 + (this.scoutSpawnI % 3) * 0.1 + this.rng.next() * 0.05;
+      this.scoutSpawnI++;
+    }
     this.ants.push(ant);
   }
 
@@ -336,7 +388,7 @@ export class GameEngine implements AntWorld, Scene {
 
   /** [O] spawnResource: nasce em área revelada, longe do ninho e de obstáculos */
   spawnResource(kind: ResourceKind): void {
-    const minDist = 190;
+    const minDist = BEHAVIOR.RES_MIN_DIST;
     for (let t = 0; t < 120; t++) {
       const x = 50 + this.rng.next() * (this.w - 100);
       const y = 50 + this.rng.next() * (this.h - 100);
@@ -492,17 +544,50 @@ export class GameEngine implements AntWorld, Scene {
     this.w = world.w;
     this.h = world.h;
     this.props = world.props;
-    this.resources = world.resources;
-    this.enemies = world.ambientEnemies;
+    // [O] o original NÃO tem fauna ambiente: inimigos só vêm das ondas
+    this.resources = [];
+    this.enemies = [];
     this.nest = { x: world.nestX, y: world.nestY, hp: this.nestHp, hpMax: NEST.HP_MAX };
     this.fog = new FogOfWar(world.w, world.h);
     this.camera.setWorldSize(world.w, world.h);
     // [O] maxRes: teto de nós por tipo para a regeneração
     this.maxRes = { [MAPS[mapId].resource]: MAPS[mapId].resourceCount };
-    this.nextResourceId = Math.max(
-      this.nextResourceId,
-      ...world.resources.map((r) => r.id + 1),
+    this.rebuildResourceIndex();
+  }
+
+  /** [O computeFrontier] menor anel totalmente revelado a partir de 2 células. */
+  computeFrontier(): void {
+    const cell = FOG.CELL;
+    const maxR = Math.hypot(
+      Math.max(this.nest.x, this.w - this.nest.x),
+      Math.max(this.nest.y, this.h - this.nest.y),
     );
+    let r = cell * 2;
+    while (r < maxR) {
+      let revealed = true;
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2;
+        if (!this.fog.isRevealed(this.nest.x + Math.cos(a) * r, this.nest.y + Math.sin(a) * r)) {
+          revealed = false;
+          break;
+        }
+      }
+      if (!revealed) break;
+      r += cell;
+    }
+    this.frontierR = Math.max(cell * 2, r);
+  }
+
+  /** [O buildWorld] revela o ninho e semeia os recursos INICIAIS na área
+   *  revelada: maxRes × exploredFactor (piso 15%), a ≥170px do ninho. */
+  private seedWorld(): void {
+    this.fog.reveal(this.nest.x, this.nest.y, FOG.NEST_RADIUS);
+    this.computeFrontier();
+    this.exploredPct = Math.round(this.fog.revealedFraction() * 100);
+    const kind = MAPS[this.mapId].resource;
+    const factor = Math.max(RESOURCE_REGEN.FACTOR_MIN, this.exploredPct / 100);
+    const n = Math.round((this.maxRes[kind] ?? 0) * factor);
+    for (let i = 0; i < n; i++) this.spawnResource(kind);
     this.rebuildResourceIndex();
   }
 
@@ -562,8 +647,7 @@ export class GameEngine implements AntWorld, Scene {
 
     this.loadWorld(mapId);
     this.populate();
-
-    this.fog.reveal(this.nest.x, this.nest.y, FOG.NEST_RADIUS);
+    this.seedWorld();
     this.recomputeFogActive();
 
     this.camera.mode = 'follow';
@@ -663,7 +747,7 @@ export class GameEngine implements AntWorld, Scene {
     this.selectedAntId = null;
     this.loadWorld(mapId);
     this.populate();
-    this.fog.reveal(this.nest.x, this.nest.y, FOG.NEST_RADIUS);
+    this.seedWorld();
     this.recomputeFogActive();
     this.camera.cx = this.nest.x;
     this.camera.cy = this.nest.y;
@@ -703,7 +787,7 @@ export class GameEngine implements AntWorld, Scene {
 
   clickWorld(worldX: number, worldY: number): 'interior' | null {
     const d = Math.hypot(worldX - this.nest.x, worldY - this.nest.y);
-    return d <= NEST.MOUND_RADIUS + 20 ? 'interior' : null;
+    return d <= 90 ? 'interior' : null; // [O] toque no ninho < 90
   }
 
   enterInterior(): void {
@@ -863,6 +947,58 @@ export class GameEngine implements AntWorld, Scene {
     }
   }
 
+  /** [O advanceWave] adianta a próxima onda em troca de recursos. */
+  advanceWave(): boolean {
+    if (!this.runActive || this.gameOver || this.wave.active) return false;
+    const kind = MAPS[this.mapId].resource;
+    const n = 3 + this.wave.num + 1;
+    this.wallet[kind] = (this.wallet[kind] ?? 0) + n;
+    this.wave.tSec = 0;
+    this.audio.play('click');
+    this.pushToast(`Onda adiantada! +${n} ${RESOURCES[kind].name}.`, 'success');
+    this.publishHud();
+    return true;
+  }
+
+  // ═════════════════════ COMANDOS DE TOQUE [O] ═════════════════════
+
+  /** [O callScouts] toque simples: exploradoras acorrem ao ponto. */
+  callScouts(x: number, y: number): void {
+    if (!this.runActive || this.gameOver) return;
+    const cx = Math.min(this.w - 30, Math.max(30, x));
+    const cy = Math.min(this.h - 30, Math.max(30, y));
+    for (const a of this.ants) {
+      if (a.cls !== 'scout' || a.z > 0) continue;
+      const p = 14 + this.rng.next() * 34;
+      const ang = this.rng.next() * Math.PI * 2;
+      a.tx = cx + Math.cos(ang) * p;
+      a.ty = cy + Math.sin(ang) * p;
+      a.state = 'command';
+      a.scoutTx = a.tx;
+      a.scoutTy = a.ty;
+    }
+    this.tapMarks.push({ x: cx, y: cy, t: 0.45, color: '102,202,104' });
+    this.audio.play('click');
+  }
+
+  /** [O callSoldiers] toque duplo: soldados acorrem ao ponto. */
+  callSoldiers(x: number, y: number): void {
+    if (!this.runActive || this.gameOver) return;
+    const cx = Math.min(this.w - 30, Math.max(30, x));
+    const cy = Math.min(this.h - 30, Math.max(30, y));
+    for (const a of this.ants) {
+      if (a.cls !== 'soldier' || a.z > 0) continue;
+      const p = 14 + this.rng.next() * 34;
+      const ang = this.rng.next() * Math.PI * 2;
+      a.tx = cx + Math.cos(ang) * p;
+      a.ty = cy + Math.sin(ang) * p;
+      a.state = 'command';
+      a.targetEnemyId = null;
+    }
+    this.tapMarks.push({ x: cx, y: cy, t: 0.45, color: '240,101,92' });
+    this.audio.play('click');
+  }
+
   // ═════════════════════ RALLY / RENASCER [O] ═══════════════════════
 
   /** [O] ATACAR!: 6s de buff, soldados partem para o inimigo mais próximo */
@@ -875,7 +1011,9 @@ export class GameEngine implements AntWorld, Scene {
       const enemy = this.nearestVisibleEnemy(a.x, a.y, 1e5);
       if (enemy) {
         a.targetEnemyId = enemy.id;
-        a.state = 'seekEnemy';
+        a.tx = enemy.x;
+        a.ty = enemy.y;
+        a.state = 'command';
         a.targetResId = null;
       }
     }

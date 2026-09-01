@@ -22,6 +22,9 @@ interface SavedAnt {
   targetResId: number | null; targetEnemyId: number | null;
   tx: number; ty: number; walkPhase: number; seed: number;
   z: number; vx: number; vy: number; vz: number;
+  // IA fiel [O] (ausente em saves antigos → default)
+  angle?: number; wanderAngle?: number; wanderT?: number;
+  scoutA?: number; scoutR?: number;
 }
 
 export interface RunSaveV2 {
@@ -130,6 +133,8 @@ export function serialize(engine: GameEngine): RunSaveV2 {
       targetResId: a.targetResId, targetEnemyId: a.targetEnemyId,
       tx: Math.round(a.tx), ty: Math.round(a.ty), walkPhase: a.walkPhase, seed: a.seed,
       z: a.z, vx: a.vx, vy: a.vy, vz: a.vz,
+      angle: a.angle, wanderAngle: a.wanderAngle, wanderT: a.wanderT,
+      scoutA: a.scoutA, scoutR: a.scoutR,
     })),
     resourceNodes: engine.resources.map((r) => ({
       id: r.id, kind: r.kind, x: Math.round(r.x), y: Math.round(r.y),
@@ -206,13 +211,13 @@ export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
   engine.clock.runSeconds = save.runSeconds;
   engine.selectedAntId = save.selectedAntId;
 
-  // mundo: props/fauna regenerados pela seed fixa; nós de recurso restaurados
+  // mundo: props regenerados pela seed fixa; nós de recurso restaurados
   const world = generateWorld(save.mapId);
   engine.mapId = save.mapId;
   engine.w = world.w;
   engine.h = world.h;
   engine.props = world.props;
-  engine.enemies = world.ambientEnemies;
+  engine.enemies = [];
   engine.nest = { x: world.nestX, y: world.nestY, hp: save.nestHp, hpMax: engine.nestHpMax() };
   engine.resources = save.resourceNodes.map((r) => ({
     ...r, phase: r.phase ?? 0,
@@ -224,12 +229,27 @@ export function applySave(engine: GameEngine, save: RunSaveV2): boolean {
   engine.camera.mode = save.camera.mode === 'free' ? 'free' : 'follow';
   engine.camera.clamp();
 
-  engine.ants = save.ants.map((a) => ({ ...a }));
+  engine.ants = save.ants.map((a) => ({
+    angle: a.wanderAngle ?? 0,
+    wanderAngle: a.wanderAngle ?? 0,
+    wanderT: a.wanderT ?? 0,
+    fearT: 0,
+    fearAx: 0,
+    fearAy: 0,
+    stunT: 0,
+    scoutA: a.scoutA ?? a.wanderAngle ?? 0,
+    scoutR: a.scoutR ?? 1,
+    scoutTx: a.x,
+    scoutTy: a.y,
+    scoutDecideT: 0,
+    ...a,
+  }));
   resumeAntIds(save.ants.reduce((m, a) => Math.max(m, a.id), 0));
   resumeEnemyIds(engine.enemies.reduce((m, e) => Math.max(m, e.id), 0));
 
   engine.rebuildResourceIndex();
   engine.recomputeFogActive();
   engine.exploredPct = Math.round(engine.fog.revealedFraction() * 100);
+  engine.computeFrontier();
   return true;
 }

@@ -86,8 +86,25 @@ export class Renderer {
     this.drawGround(ctx, scene, view);
     this.drawSorted(ctx, scene, view);
     this.drawSmashFx(ctx, scene);
+    this.drawTapMarks(ctx, scene);
     this.drawFog(ctx, scene, view);
     this.drawClouds(ctx);
+  }
+
+  /** [O tapMarks] anel do comando CHAMAR (toque/toque duplo) */
+  private drawTapMarks(ctx: CanvasRenderingContext2D, scene: Scene): void {
+    for (const m of scene.tapMarks) {
+      const k = 1 - m.t / 0.45;
+      ctx.strokeStyle = `rgba(${m.color}, ${(0.9 * (1 - k)).toFixed(3)})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 14 + k * 26, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${m.color}, ${(0.8 * (1 - k)).toFixed(3)})`;
+      ctx.fill();
+    }
   }
 
   /** [O] anel do smash do chefe */

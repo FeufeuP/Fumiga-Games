@@ -14,11 +14,12 @@ interface Props {
   onOpenMaps: () => void;
   onRallyAttack: () => void;
   onRallyCollect: () => void;
+  onAdvanceWave: () => void;
 }
 
 const RES_ORDER: ResourceKind[] = ['leaf', 'mushroom', 'cactus', 'banana', 'flower', 'crystal'];
 
-export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRallyCollect }: Props) {
+export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRallyCollect, onAdvanceWave }: Props) {
   const hungerPct = (hud.queenHunger / hud.queenHungerMax) * 100;
   const nestPct = (hud.nestHp / hud.nestHpMax) * 100;
   const waveSec = Math.max(0, Math.ceil(hud.wave.tSec));
@@ -49,13 +50,18 @@ export default function Hud({ hud, onOpenShop, onOpenMaps, onRallyAttack, onRall
         </div>
       </div>
 
-      {/* topo-centro: onda + chefe */}
+      {/* topo-centro: onda + chefe + ADIANTAR ONDA [O] */}
       <div className={styles.center}>
         <div className={styles.wave}>
           {hud.wave.active
             ? `🌊 ONDA ${hud.wave.num} · ${waveSec}s`
-            : `Próxima onda em ${waveSec}s`}
+            : `PROXIMA ONDA EM ${waveSec}s`}
         </div>
+        {!hud.wave.active && !hud.gameOver && (
+          <button className={styles.advanceBtn} onClick={onAdvanceWave}>
+            ADIANTAR ONDA
+          </button>
+        )}
         {hud.boss && hud.bossAggro && (
           <div className={styles.bossWrap}>
             <span className={styles.bossName}>{hud.boss.name}</span>
