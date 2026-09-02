@@ -22,7 +22,7 @@
   border: 2px solid var(--c-terra-clara);
   border-radius: 10px;
   padding: 8px 12px;
-  min-width: 180px;
+  min-width: 208px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
 }
 
@@ -30,7 +30,7 @@
   display: flex;
   justify-content: space-between;
   gap: 14px;
-  font-size: 12px;
+  font-size: 16px;
   letter-spacing: 1px;
   color: var(--c-texto);
 }
@@ -50,7 +50,7 @@
 .xpLabel {
   display: flex;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: 14px;
   color: #8ac0ff;
   letter-spacing: 0.5px;
 }
@@ -66,7 +66,7 @@
   background: rgba(45, 35, 25, 0.8);
   border: 1px solid var(--c-terra-clara);
   color: var(--c-dourado);
-  font-size: 10px;
+  font-size: 14px;
   padding: 4px 6px;
   border-radius: 5px;
   cursor: pointer;
@@ -97,7 +97,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 14px;
   letter-spacing: 1px;
   color: var(--c-texto);
 }
@@ -114,7 +114,7 @@
   border: 2px solid #6d5426;
   color: #fde056;
   font-family: "'Courier New', monospace";
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: 1px;
   padding: 5px 10px;
@@ -145,7 +145,7 @@
   border: 2px solid var(--c-terra-clara);
   border-radius: 8px;
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: 17px;
   letter-spacing: 1px;
   white-space: nowrap;
 }
@@ -162,7 +162,7 @@
 }
 
 .bossName {
-  font-size: 11px;
+  font-size: 15px;
   color: #ff9d8a;
   letter-spacing: 1px;
   text-align: center;
@@ -197,7 +197,7 @@
 
 .actionBtn {
   padding: 10px 16px;
-  font-size: 14px;
+  font-size: 18px;
   letter-spacing: 2px;
   color: var(--c-texto);
   background: var(--c-terra-media);
@@ -218,7 +218,7 @@
 .speedBtn {
   background: #1e2838;
   border-color: #3b5982;
-  font-size: 13px;
+  font-size: 17px;
   padding: 10px 14px;
   min-width: 60px;
   text-align: center;
@@ -248,7 +248,7 @@
   background: rgba(20, 18, 15, 0.88);
   border-radius: 8px;
   padding: 7px 14px;
-  font-size: 13px;
+  font-size: 17px;
   letter-spacing: 0.5px;
   border: 2px solid var(--c-terra-clara);
   max-width: 78vw;
@@ -278,7 +278,7 @@
 .rallyBtn {
   background: var(--c-terra-escura);
   border-color: var(--c-vermelho);
-  font-size: 12px;
+  font-size: 16px;
   padding: 10px 12px;
 }
 
@@ -296,7 +296,7 @@
 .explored {
   text-align: center;
   color: #fde056;
-  font-size: 11px;
+  font-size: 15px;
   letter-spacing: 1px;
   border-top: 1px solid rgba(139, 86, 45, 0.6);
   padding-top: 4px;

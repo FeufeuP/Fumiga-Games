@@ -1,62 +1,213 @@
-/* Interior do ninho — madeira, rainha em destaque, barras de fome. */
+/**
+ * Interior do formigueiro — redesign 16-bit (0.3.2):
+ * corte transversal de um formigueiro real: SAÍDA no topo, túnel central
+ * descendo até a SALA DA RAINHA na base, câmaras laterais espalhadas
+ * de forma orgânica e ligadas por galerias escavadas.
+ * Estilo pixel-art: cores chapadas, bordas duras 3px, sombras em degrau,
+ * sem gradientes suaves nem blur.
+ */
+
 .screen {
   position: fixed;
   inset: 0;
   z-index: 25;
   background: var(--c-terra-media) repeat;
   background-size: 96px;
+  overflow: hidden;
+}
+
+/* ── túnel central (o eixo do formigueiro) ─────────────────── */
+.tunnel {
+  position: absolute;
+  top: 64px;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 96px;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.22) 0 6px,
+      rgba(0, 0, 0, 0) 6px 14px
+    ),
+    #2a170d;
+  border-left: 6px solid var(--c-terra-clara);
+  border-right: 6px solid var(--c-terra-clara);
+  box-shadow:
+    inset 6px 0 0 rgba(0, 0, 0, 0.3),
+    inset -6px 0 0 rgba(0, 0, 0, 0.3);
+  z-index: 1;
+}
+
+/* boca do túnel junto à saída */
+.tunnel::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 14px;
+  background: #1b0e06;
+  border: 3px solid #14100c;
+  border-top: 0;
+}
+
+/* ── saída (topo da tela) ──────────────────────────────────── */
+.exitBtn {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  padding: 6px 16px 6px 8px;
+  color: var(--c-texto);
+  letter-spacing: 2px;
+  font-size: 16px;
+  background: #5d341e;
+  border: 3px solid #14100c;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.35),
+    0 5px 0 rgba(0, 0, 0, 0.45);
 }
 
-.backBtn {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  width: 56px;
-  height: 56px;
-  padding: 8px;
-  background: rgba(20, 18, 15, 0.55);
-  border: 2px solid var(--c-terra-clara);
-  border-radius: 10px;
+.exitBtn:active {
+  transform: translateX(-50%) translateY(3px);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.35),
+    0 2px 0 rgba(0, 0, 0, 0.45);
 }
 
-.backBtn img {
-  width: 100%;
-  height: 100%;
+.exitBtn img {
+  width: 44px;
+  height: 44px;
   object-fit: contain;
   image-rendering: pixelated;
 }
 
-.room {
+/* ── câmaras laterais + galerias ───────────────────────────── */
+.galley {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  transform: translateY(-50%);
+}
+
+.galleyLeft {
+  right: calc(50% + 54px);
+  flex-direction: row;
+}
+
+.galleyRight {
+  left: calc(50% + 54px);
+  flex-direction: row;
+}
+
+.connector {
+  flex: 0 0 auto;
+  width: 14px; /* sobreposto inline com o offset orgânico de cada sala */
+  height: 16px;
+  background: #241109;
+  border-top: 3px solid #14100c;
+  border-bottom: 3px solid #14100c;
+}
+
+.chamber {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  background: rgba(20, 18, 15, 0.55);
-  border: 3px solid var(--c-terra-clara);
-  border-radius: 16px;
-  padding: 22px 26px;
-  max-width: min(440px, 90vw);
+  gap: 4px;
+  min-width: 92px;
+  max-width: 31vw;
+  padding: 10px 12px;
+  color: var(--c-texto);
   text-align: center;
+  background: #5d341e;
+  border: 3px solid #14100c;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.35),
+    4px 5px 0 rgba(0, 0, 0, 0.35);
+}
+
+.chamber:hover {
+  background: #6d4128;
+}
+
+.chamber:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.35),
+    2px 3px 0 rgba(0, 0, 0, 0.35);
+}
+
+.chamberIcon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.chamberLabel {
+  font-size: 13px;
+  letter-spacing: 1px;
+  line-height: 1.25;
+}
+
+/* ── sala da rainha (base do túnel) ────────────────────────── */
+.queenRoom {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(640px, 94vw);
+  padding: 14px 18px 16px;
+  text-align: center;
+  background: #5d341e;
+  border: 4px solid #14100c;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 0 0 3px var(--c-dourado),
+    inset 0 4px 0 rgba(255, 255, 255, 0.08),
+    0 6px 0 rgba(0, 0, 0, 0.45);
 }
 
 .title {
-  font-size: 18px;
+  font-size: 20px;
   letter-spacing: 3px;
   color: var(--c-dourado);
+  text-shadow: 2px 2px 0 var(--c-contorno);
+}
+
+.queenRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  flex-wrap: wrap;
 }
 
 .queen {
-  width: 132px;
+  width: 116px;
   image-rendering: pixelated;
-  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.35));
   animation: queenBob 2s ease-in-out infinite; /* [O] bobbing suave da rainha */
 }
 
 .queenEmoji {
-  font-size: 84px;
+  font-size: 76px;
   line-height: 1;
   animation: queenBob 2s ease-in-out infinite;
 }
@@ -75,16 +226,16 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 100%;
+  width: min(300px, 72vw);
 }
 
 .label {
-  font-size: 13px;
+  font-size: 16px;
   letter-spacing: 1px;
 }
 
 .bar {
-  height: 12px;
+  height: 14px;
   background: var(--c-contorno);
   border: 2px solid var(--c-contorno);
   border-radius: 4px;
@@ -97,57 +248,30 @@
 }
 
 .hint {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1.5;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .stock {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px 14px;
-  font-size: 13px;
+  gap: 6px 16px;
+  font-size: 16px;
   background: rgba(20, 18, 15, 0.4);
+  border: 2px solid #14100c;
   border-radius: 8px;
   padding: 8px 12px;
 }
 
-/* ── salas e painéis (ciclo A) ─────────────────────────────── */
-.roomCol {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.roomBtn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  font-size: 11px;
-  letter-spacing: 1px;
-  color: var(--c-texto);
-  background: rgba(74, 44, 20, 0.92);
-  border: 2px solid #1f0f05;
-  border-radius: 10px;
-}
-
-.roomBtn:hover {
-  background: var(--c-laranja);
-}
-
-.roomIcon { font-size: 18px; line-height: 1; }
-
+/* ── painel da sala aberta ─────────────────────────────────── */
 .overlay {
   position: absolute;
   inset: 0;
   z-index: 30;
-  background: rgba(20, 18, 15, 0.7);
+  background: rgba(20, 18, 15, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -155,7 +279,7 @@
 }
 
 .panel {
-  width: min(480px, 94vw);
+  width: min(520px, 94vw);
   max-height: 88vh;
   display: flex;
   flex-direction: column;
@@ -163,7 +287,7 @@
   border: 3px solid var(--c-terra-clara);
   border-radius: 12px;
   padding: 14px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.5);
 }
 
 .panelHeader {
@@ -174,19 +298,21 @@
 }
 
 .panelHeader h3 {
-  font-size: 16px;
+  font-size: 19px;
   letter-spacing: 3px;
   color: var(--c-dourado);
+  text-shadow: 2px 2px 0 var(--c-contorno);
 }
 
 .closeBtn {
-  width: 32px;
-  height: 32px;
-  font-size: 14px;
+  width: 38px;
+  height: 38px;
+  font-size: 16px;
   color: var(--c-texto);
   background: var(--c-vermelho);
   border: 2px solid var(--c-contorno);
   border-radius: 8px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
 }
 
 .panelBody {
@@ -223,14 +349,14 @@
   gap: 8px;
 }
 
-.listTitle { font-size: 12px; }
-.listXp { font-size: 11px; color: var(--c-dourado); }
-.listCount { font-size: 10px; align-self: flex-end; }
+.listTitle { font-size: 16px; }
+.listXp { font-size: 14px; color: var(--c-dourado); }
+.listCount { font-size: 13px; align-self: flex-end; }
 
 .cemeteryRow {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 16px;
   background: rgba(20, 18, 15, 0.4);
   border-radius: 8px;
   padding: 7px 10px;
@@ -265,7 +391,7 @@
   align-items: center;
   gap: 4px;
   padding: 10px;
-  font-size: 12px;
+  font-size: 15px;
   background: rgba(20, 18, 15, 0.4);
   border: 2px solid var(--c-terra-clara);
   border-radius: 10px;
@@ -281,8 +407,8 @@
 }
 
 .tab {
-  padding: 7px 4px;
-  font-size: 10px;
+  padding: 8px 4px;
+  font-size: 13px;
   color: var(--c-texto);
   background: var(--c-terra-escura);
   border: 2px solid var(--c-contorno);
@@ -297,7 +423,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: 15px;
   color: var(--c-texto);
   background: rgba(20, 18, 15, 0.4);
   border: 2px solid var(--c-verde);
@@ -325,10 +451,10 @@
   padding: 10px;
 }
 
-.big { font-size: 20px; color: var(--c-dourado); }
+.big { font-size: 24px; color: var(--c-dourado); }
 
 .currentTag {
-  font-size: 9px;
+  font-size: 12px;
   color: var(--c-dourado);
   letter-spacing: 1px;
 }
@@ -336,10 +462,118 @@
 .rebirthBtn {
   margin-top: 6px;
   padding: 12px;
-  font-size: 14px;
+  font-size: 17px;
   letter-spacing: 2px;
   color: #fff4dd;
   background: var(--c-roxo);
   border: 3px solid var(--c-contorno);
   border-radius: 10px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45);
+}
+
+/* ── CARTAS da build (veio do menu de pausa) ───────────────── */
+.cardsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.cardsSummary {
+  font-size: 15px;
+  color: var(--c-dourado);
+}
+
+.cardRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 2px solid var(--c-contorno);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.cardIcon { font-size: 22px; line-height: 1; }
+
+.cardName {
+  flex: 1;
+  text-align: left;
+  font-size: 15px;
+}
+
+.pips {
+  display: flex;
+  gap: 4px;
+}
+
+.pip {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--c-contorno);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.pipOn { background: var(--c-dourado); }
+
+.cardRar {
+  font-size: 12px;
+  min-width: 88px;
+  text-align: right;
+}
+
+/* ── CLASSES com quitina (veio do menu de pausa) ───────────── */
+.classRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 2px solid var(--c-contorno);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.classInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+
+.className {
+  color: #fde056;
+  font-size: 16px;
+}
+
+.classDesc {
+  font-size: 13px;
+  color: #c4b5a0;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.classActive {
+  color: #5fce55;
+  font-weight: bold;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.classBtn {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #fff4dd;
+  background: var(--c-laranja);
+  border: 2px solid var(--c-contorno);
+  border-radius: 8px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+.classBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

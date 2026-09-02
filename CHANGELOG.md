@@ -4,6 +4,21 @@ Formato: fase do plano (`01_PLANO_DE_DESENVOLVIMENTO.md`) → o que entrou.
 
 ---
 
+## 0.3.2 — UI: fontes maiores + formigueiro real 16-bit (2026-09-02)
+
+- **Tipografia**: +4px em 81 tamanhos de fonte da interface (HUD, loja,
+  mapas, painéis, menus) — textos pequenos saíram de 9–13px para 13–17px.
+- **Interior redesenhado** (pixel-art 16-bit, corte transversal de ninho
+  real): SAÍDA no topo (sprite btn_back + rótulo), túnel central escavado
+  descendo até a SALA DA RAINHA na base (moldura dourada) e **10 câmaras
+  laterais espalhadas de forma orgânica** — seed fixa via `Rng` mulberry32:
+  desorganizado como um formigueiro de verdade, porém estável entre
+  sessões. Cada câmara liga ao túnel por uma galeria de comprimento variável.
+- **CARTAS, CLASSES e CONQUISTAS saíram do menu de pausa** e viraram câmaras
+  do formigueiro (🃏 CARTAS, 🦴 CLASSES, 🏆 CONQUISTAS). A pausa fica com
+  CONTINUAR / ESTATÍSTICAS / COLÔNIA / PLACAR / SAIR.
+- CSS morto do pause removido; `tsc --noEmit` limpo; 144/144 testes.
+
 ## 0.3.1 — Botão voltar novo, plano 09 e executável único (2026-09-01)
 
 - **`btn_back.png` redesenhado**: quadrado 112×112 (múltiplo 2× do alvo de 56px

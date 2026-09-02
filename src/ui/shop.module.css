@@ -30,7 +30,7 @@
 }
 
 .header h2 {
-  font-size: 18px;
+  font-size: 22px;
   letter-spacing: 3px;
   color: var(--c-dourado);
 }
@@ -38,7 +38,7 @@
 .closeBtn {
   width: 34px;
   height: 34px;
-  font-size: 16px;
+  font-size: 20px;
   color: var(--c-texto);
   background: var(--c-vermelho);
   border: 2px solid var(--c-contorno);
@@ -49,7 +49,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px 14px;
-  font-size: 13px;
+  font-size: 17px;
   background: rgba(20, 18, 15, 0.45);
   border-radius: 8px;
   padding: 6px 10px;
@@ -63,7 +63,7 @@
 
 .tab {
   padding: 8px 4px;
-  font-size: 11px;
+  font-size: 15px;
   letter-spacing: 1px;
   color: var(--c-texto);
   background: var(--c-terra-escura);
@@ -113,21 +113,21 @@
   gap: 6px;
 }
 
-.itemIcon { font-size: 18px; }
+.itemIcon { font-size: 22px; }
 
 .itemName {
   flex: 1;
-  font-size: 12px;
+  font-size: 16px;
   letter-spacing: 0.5px;
 }
 
 .itemLevel {
-  font-size: 10px;
+  font-size: 14px;
   color: var(--c-dourado);
 }
 
 .itemDesc {
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 400;
   line-height: 1.35;
   opacity: 0.85;
@@ -135,7 +135,7 @@
 
 .itemCost {
   align-self: flex-end;
-  font-size: 12px;
+  font-size: 16px;
   padding: 3px 8px;
   background: rgba(20, 18, 15, 0.55);
   border: 1px solid var(--c-terra-clara);
@@ -145,7 +145,7 @@
 /* ── prévia concreta: agora → próximo (melhoria visível) ────────── */
 .itemPreview {
   margin: 2px 0;
-  font-size: 11px;
+  font-size: 15px;
   color: #ffd98a;
   opacity: 0.95;
   letter-spacing: 0.03em;

@@ -1,12 +1,17 @@
 /**
- * Interior do formigueiro — fiel ao original: madeira + rainha + 9 salas
- * (cemitério, conquistas, missões, formigas, mapa, melhorias, inventário,
- * renascer, sair). Coordenadas normalizadas do bundle (Vr).
+ * Interior do formigueiro — redesenho 0.3.2 (16-bit):
+ * corte transversal de um formigueiro de verdade — SAÍDA no topo,
+ * túnel central descendo até a SALA DA RAINHA na base e câmaras
+ * laterais espalhadas de forma orgânica (layout determinístico por
+ * seed, mas "desorganizado" como num ninho real).
+ * CARTAS, CLASSES e CONQUISTAS agora vivem AQUI (saíram do menu de pausa).
  */
 import { useState } from 'react';
 import type { GameEngine } from '../engine/GameEngine';
 import type { HudState } from '../core/types';
 import { ANTS, MAPS, QUEEN, RESOURCES, type MapId, type ResourceKind } from '../core/constants';
+import { Rng } from '../core/rng';
+import { RARIDADES, SLOTS } from '../roguelike/cards';
 import styles from './interior.module.css';
 
 interface Props {
@@ -17,20 +22,75 @@ interface Props {
 const FOOD_ORDER: ResourceKind[] = ['leaf', 'mushroom', 'cactus', 'banana', 'flower', 'crystal'];
 const ALL_MAPS: MapId[] = ['campo', 'pantano', 'deserto', 'montanha', 'caverna', 'selva'];
 
-type RoomId = 'cemetery' | 'achievements' | 'missions' | 'ants' | 'map'
-  | 'upgrades' | 'inventory' | 'rebirth' | null;
+type RoomId = 'cemetery' | 'achievements' | 'missions' | 'ants' | 'map' | 'upgrades'
+  | 'inventory' | 'rebirth' | 'cards' | 'classes' | null;
 
-/** [O] Vr — posições das salas (cx, cy num canvas 1000×560) */
-const ROOMS: Array<{ id: Exclude<RoomId, null>; label: string; icon: string; cx: number; cy: number }> = [
-  { id: 'cemetery', label: 'CEMITÉRIO', icon: '⚰️', cx: 168, cy: 104 },
-  { id: 'achievements', label: 'CONQUISTAS', icon: '🏆', cx: 206, cy: 192 },
-  { id: 'missions', label: 'MISSÕES', icon: '📜', cx: 150, cy: 300 },
-  { id: 'ants', label: 'FORMIGAS', icon: '🐜', cx: 192, cy: 396 },
-  { id: 'map', label: 'MAPA', icon: '🗺️', cx: 164, cy: 498 },
-  { id: 'upgrades', label: 'MELHORIAS', icon: '⚙️', cx: 832, cy: 132 },
-  { id: 'inventory', label: 'INVENTÁRIO', icon: '🎒', cx: 852, cy: 330 },
-  { id: 'rebirth', label: 'RENASCER', icon: '🔄', cx: 812, cy: 428 },
+interface RoomDef {
+  id: Exclude<RoomId, null>;
+  label: string;
+  icon: string;
+}
+
+/** as 10 câmaras do ninho (conquistas/cartas/classes incluídas) */
+const ROOMS: RoomDef[] = [
+  { id: 'cemetery', label: 'CEMITÉRIO', icon: '⚰️' },
+  { id: 'achievements', label: 'CONQUISTAS', icon: '🏆' },
+  { id: 'missions', label: 'MISSÕES', icon: '📜' },
+  { id: 'ants', label: 'FORMIGAS', icon: '🐜' },
+  { id: 'map', label: 'MAPA', icon: '🗺️' },
+  { id: 'upgrades', label: 'MELHORIAS', icon: '⚙️' },
+  { id: 'inventory', label: 'INVENTÁRIO', icon: '🎒' },
+  { id: 'rebirth', label: 'RENASCER', icon: '🔄' },
+  { id: 'cards', label: 'CARTAS', icon: '🃏' },
+  { id: 'classes', label: 'CLASSES', icon: '🦴' },
 ];
+
+/**
+ * Distribuição "desorganizada" das câmaras ao longo do túnel central:
+ * embaralhamento com seed fixa (Rng mulberry32) — orgânico, porém estável
+ * entre renders/sessions, como manda a regra #3 de engenharia.
+ * 5 faixas de profundidade × 2 lados, com jitter vertical e galerias
+ * de comprimento variável.
+ */
+const LAYOUT: Array<{ room: RoomDef; side: 'L' | 'R'; y: number; off: number }> = (() => {
+  const rng = new Rng(0x5eed);
+  const pool = [...ROOMS];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = rng.int(0, i);
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const rows = [0.2, 0.32, 0.44, 0.56, 0.68];
+  return pool.map((room, i) => ({
+    room,
+    side: i % 2 === 0 ? ('L' as const) : ('R' as const),
+    y: rows[Math.floor(i / 2)] + rng.float(-0.022, 0.022),
+    off: rng.int(10, 34),
+  }));
+})();
+
+const CLASSES_DEFS = [
+  {
+    id: 'defensora',
+    nome: 'Defensora',
+    icone: '🛡️',
+    cost: 3,
+    desc: 'Soldados guardam anel de defesa a 150px do ninho e absorvem mais dano.',
+  },
+  {
+    id: 'toxica',
+    nome: 'Tóxica',
+    icone: '🧪',
+    cost: 6,
+    desc: 'Soldados cospem ácido a 180px com corrosão contínua nos inimigos.',
+  },
+  {
+    id: 'gigante',
+    nome: 'Gigante',
+    icone: '🗿',
+    cost: 10,
+    desc: 'Soldados crescem 45%, ganham +40 HP, +5 dano e empurram inimigos ao atacar.',
+  },
+] as const;
 
 export default function InteriorScreen({ engine, hud }: Props) {
   const wood = engine.sprites?.woodTile ?? '';
@@ -44,51 +104,59 @@ export default function InteriorScreen({ engine, hud }: Props) {
 
   return (
     <div className={styles.screen} style={{ backgroundImage: wood ? `url(${wood})` : undefined }}>
-      <button className={styles.backBtn} onClick={() => engine.exitInterior()} aria-label="Voltar">
-        {back && <img src={back} alt="Voltar" />}
-        {!back && '← VOLTAR'}
+      {/* saída no topo do túnel */}
+      <button className={styles.exitBtn} onClick={() => engine.exitInterior()} aria-label="Sair do formigueiro">
+        {back && <img src={back} alt="Saída" />}
+        <span>SAÍDA</span>
       </button>
 
-      {/* salas laterais [O Vr] */}
-      <div className={styles.roomCol} style={{ left: '3%' }}>
-        {ROOMS.filter((r) => r.cx < 500).map((r) => (
-          <button key={r.id} className={styles.roomBtn} onClick={() => setRoom(r.id)}>
-            <span className={styles.roomIcon}>{r.icon}</span>
-            <span>{r.label}</span>
-          </button>
-        ))}
-      </div>
-      <div className={styles.roomCol} style={{ right: '3%' }}>
-        {ROOMS.filter((r) => r.cx >= 500).map((r) => (
-          <button key={r.id} className={styles.roomBtn} onClick={() => setRoom(r.id)}>
-            <span className={styles.roomIcon}>{r.icon}</span>
-            <span>{r.label}</span>
-          </button>
-        ))}
-      </div>
+      {/* túnel central até a sala da rainha */}
+      <div className={styles.tunnel} />
 
-      {/* centro: sala da rainha */}
-      <div className={styles.room}>
-        <h2 className={styles.title}>SALA DA RAINHA</h2>
-        {heroAnt && <img className={styles.queen} src={heroAnt} alt="Rainha" />}
-        {!heroAnt && <div className={styles.queenEmoji}>🐜</div>}
-        <div className={styles.hungerWrap}>
-          <span className={styles.label}>
-            👑 FOME {Math.ceil(hud.queenHunger)}/{hud.queenHungerMax}
-          </span>
-          <div className={styles.bar}>
-            <div
-              className={styles.fill}
-              style={{
-                width: `${hungerPct}%`,
-                background: hungerPct < 30 ? 'var(--c-vermelho)' : 'var(--c-verde)',
-              }}
-            />
+      {/* câmaras laterais espalhadas (formigueiro real) */}
+      {LAYOUT.map(({ room: r, side, y, off }) => {
+        const chamber = (
+          <button className={styles.chamber} onClick={() => setRoom(r.id)}>
+            <span className={styles.chamberIcon}>{r.icon}</span>
+            <span className={styles.chamberLabel}>{r.label}</span>
+          </button>
+        );
+        const connector = <span className={styles.connector} style={{ width: off }} />;
+        return (
+          <div
+            key={r.id}
+            className={side === 'L' ? styles.galleyLeft : styles.galleyRight}
+            style={{ top: `${(y * 100).toFixed(2)}%` }}
+          >
+            {side === 'L' ? <>{chamber}{connector}</> : <>{connector}{chamber}</>}
           </div>
-          <span className={styles.hint}>
-            Ela come 1 item a cada {Math.round(QUEEN.FEED_INTERVAL_SEC)}s —
-            mantenha comida no estoque!
-          </span>
+        );
+      })}
+
+      {/* sala da rainha na base do túnel */}
+      <div className={styles.queenRoom}>
+        <h2 className={styles.title}>👑 SALA DA RAINHA</h2>
+        <div className={styles.queenRow}>
+          {heroAnt && <img className={styles.queen} src={heroAnt} alt="Rainha" />}
+          {!heroAnt && <div className={styles.queenEmoji}>🐜</div>}
+          <div className={styles.hungerWrap}>
+            <span className={styles.label}>
+              👑 FOME {Math.ceil(hud.queenHunger)}/{hud.queenHungerMax}
+            </span>
+            <div className={styles.bar}>
+              <div
+                className={styles.fill}
+                style={{
+                  width: `${hungerPct}%`,
+                  background: hungerPct < 30 ? 'var(--c-vermelho)' : 'var(--c-verde)',
+                }}
+              />
+            </div>
+            <span className={styles.hint}>
+              Ela come 1 item a cada {Math.round(QUEEN.FEED_INTERVAL_SEC)}s —
+              mantenha comida no estoque!
+            </span>
+          </div>
         </div>
         <div className={styles.stock}>
           {FOOD_ORDER.map((k) => (
@@ -99,7 +167,7 @@ export default function InteriorScreen({ engine, hud }: Props) {
         </div>
       </div>
 
-      {/* painel da sala escolhida */}
+      {/* painel da câmara escolhida */}
       {room && (
         <div className={styles.overlay} onClick={() => setRoom(null)}>
           <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
@@ -171,7 +239,7 @@ export default function InteriorScreen({ engine, hud }: Props) {
                 <div className={styles.antsGrid}>
                   {(['worker', 'soldier', 'scout'] as const).map((cls) => (
                     <div key={cls} className={styles.antsCard}>
-                      <span className={styles.roomIcon}>{ANTS[cls].icon}</span>
+                      <span className={styles.chamberIcon}>{ANTS[cls].icon}</span>
                       <span className={styles.listTitle}>{ANTS[cls].name}</span>
                       <span className={styles.big}>{hud.ants[cls]}</span>
                       <p className={styles.hint}>{ANTS[cls].desc}</p>
@@ -193,7 +261,7 @@ export default function InteriorScreen({ engine, hud }: Props) {
                         disabled={!unlocked || current}
                         onClick={() => { engine.selectMap(id); setRoom(null); }}
                       >
-                        <span className={styles.roomIcon}>{unlocked ? m.icon : '🔒'}</span>
+                        <span className={styles.chamberIcon}>{unlocked ? m.icon : '🔒'}</span>
                         <span>{m.name}</span>
                         {current && <span className={styles.currentTag}>VOCÊ ESTÁ AQUI</span>}
                       </button>
@@ -260,7 +328,7 @@ export default function InteriorScreen({ engine, hud }: Props) {
                   <div className={styles.invGrid}>
                     {FOOD_ORDER.map((k) => (
                       <div key={k} className={styles.invCard}>
-                        <span className={styles.roomIcon}>{RESOURCES[k].icon}</span>
+                        <span className={styles.chamberIcon}>{RESOURCES[k].icon}</span>
                         <span className={styles.big}>{hud.resources[k] ?? 0}</span>
                         <span className={styles.hint}>{RESOURCES[k].name}</span>
                       </div>
@@ -293,6 +361,70 @@ export default function InteriorScreen({ engine, hud }: Props) {
                     RENASCER AGORA
                   </button>
                 </>
+              )}
+
+              {room === 'cards' && (
+                <div className={styles.cardsList}>
+                  <p className={styles.cardsSummary}>
+                    🦴 Quitina: {hud.chitin} ·{' '}
+                    {(['especializacao', 'comportamento', 'passiva'] as const).map((cat) => (
+                      <span key={cat}>
+                        {SLOTS[cat].nome}: {hud.slots[cat]?.usados ?? 0}/{hud.slots[cat]?.teto ?? 0}{' '}
+                      </span>
+                    ))}
+                  </p>
+                  {hud.cards.length === 0 && (
+                    <p className={styles.hint}>Nenhuma carta ainda — suba de nível para escolher!</p>
+                  )}
+                  {hud.cards.map((c) => (
+                    <div key={c.id} className={styles.cardRow}>
+                      <span className={styles.cardIcon}>{c.icone}</span>
+                      <span className={styles.cardName}>{c.nome}</span>
+                      <span className={styles.pips}>
+                        {Array.from({ length: c.nivelMax }, (_, i) => (
+                          <span key={i} className={i < c.nivel ? styles.pipOn : styles.pip} />
+                        ))}
+                      </span>
+                      <span
+                        className={styles.cardRar}
+                        style={{ color: (RARIDADES as Record<string, { cor: string }>)[c.raridade]?.cor }}
+                      >
+                        {c.categoria === 'evolucao' ? 'EVOLUÇÃO' : `nv ${c.nivel}/${c.nivelMax}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {room === 'classes' && (
+                <div className={styles.cardsList}>
+                  <p className={styles.cardsSummary}>
+                    🦴 Quitina disponível: <strong>{hud.chitin}</strong>
+                  </p>
+                  {CLASSES_DEFS.map((cls) => {
+                    const unlocked = hud.unlockedClasses?.includes(cls.id);
+                    return (
+                      <div key={cls.id} className={styles.classRow}>
+                        <span className={styles.cardIcon}>{cls.icone}</span>
+                        <div className={styles.classInfo}>
+                          <strong className={styles.className}>{cls.nome}</strong>
+                          <span className={styles.classDesc}>{cls.desc}</span>
+                        </div>
+                        {unlocked ? (
+                          <span className={styles.classActive}>✓ ATIVA</span>
+                        ) : (
+                          <button
+                            className={styles.classBtn}
+                            disabled={hud.chitin < cls.cost}
+                            onClick={() => engine.unlockClass(cls.id)}
+                          >
+                            LIBERAR (🦴 {cls.cost})
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
