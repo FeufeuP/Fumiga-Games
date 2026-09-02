@@ -36,7 +36,7 @@
 .subtitulo {
   font-family: var(--font-pixel);
   color: var(--c-texto);
-  font-size: 13px;
+  font-size: 17px;
   margin: 4px 0 14px;
   opacity: 0.85;
 }
@@ -89,7 +89,7 @@
 }
 
 .raridadeTag {
-  font-size: 10px;
+  font-size: 14px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   border: 2px solid;
@@ -102,7 +102,7 @@
   position: absolute;
   top: -10px;
   right: -6px;
-  font-size: 9px;
+  font-size: 13px;
   background: var(--c-dourado);
   color: #241d07;
   border: 2px solid var(--c-contorno);
@@ -118,7 +118,7 @@
 }
 
 .nome {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: bold;
   letter-spacing: 0.04em;
 }
@@ -146,7 +146,7 @@
 }
 
 .desc {
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.35;
   opacity: 0.95;
   flex: 1;
@@ -155,7 +155,7 @@
 }
 
 .eixo {
-  font-size: 10px;
+  font-size: 14px;
   opacity: 0.7;
   font-style: italic;
 }
@@ -164,13 +164,13 @@
   position: absolute;
   bottom: 6px;
   right: 8px;
-  font-size: 11px;
+  font-size: 15px;
   opacity: 0.55;
 }
 
 .rodape {
   font-family: var(--font-pixel);
-  font-size: 11px;
+  font-size: 15px;
   color: var(--c-texto);
   opacity: 0.6;
   margin: 12px 0 0;
@@ -206,7 +206,7 @@
   }
   .nome,
   .desc {
-    font-size: 13px;
+    font-size: 17px;
   }
   .tecla {
     position: static;
@@ -223,7 +223,7 @@
   position: absolute;
   top: -10px;
   left: -6px;
-  font-size: 9px;
+  font-size: 13px;
   background: #63b5dc;
   color: #0c2436;
   border: 2px solid var(--c-contorno);
@@ -237,7 +237,7 @@
   bottom: -10px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 9px;
+  font-size: 13px;
   background: var(--c-dourado);
   color: #241d07;
   border: 2px solid var(--c-contorno);
@@ -248,7 +248,7 @@
 
 .recusar {
   font-family: var(--font-pixel);
-  font-size: 12px;
+  font-size: 16px;
   background: var(--c-terra-clara);
   color: var(--c-texto);
   border: 3px solid var(--c-contorno);

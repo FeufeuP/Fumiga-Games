@@ -15,7 +15,6 @@ import CameraControls from './CameraControls';
 import CardPanel from './CardPanel';
 import ReplaceDialog from './ReplaceDialog';
 import { colonyStats } from '../systems/shop';
-import { RARIDADES, SLOTS } from '../roguelike/cards';
 import styles from './game.module.css';
 
 interface Props {
@@ -143,7 +142,8 @@ export default function GameScreen({ engine, hud }: Props) {
 }
 
 function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState; onClose: () => void }) {
-  const [tab, setTab] = useState<'stats' | 'colonia' | 'cartas' | 'classes' | 'ach' | 'score' | null>(null);
+  // CARTAS, CLASSES e CONQUISTAS mudaram para DENTRO do formigueiro (0.3.2).
+  const [tab, setTab] = useState<'stats' | 'colonia' | 'score' | null>(null);
   const coloniaStats = colonyStats(hud.upgrades, hud.rebirths, engine.cardMods, {
     population: hud.ants.worker + hud.ants.soldier + hud.ants.scout,
     populationMax: engine.populationMax(),
@@ -152,33 +152,7 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
   const setModalExit = () => { onClose(); engine.backToMenu(); };
   const titulo = tab === 'stats' ? 'ESTATÍSTICAS'
     : tab === 'colonia' ? 'COLÔNIA (loja + cartas)'
-    : tab === 'cartas' ? 'CARTAS DA BUILD'
-    : tab === 'classes' ? 'CLASSES COM QUITINA'
-    : tab === 'ach' ? 'CONQUISTAS' : 'PLACAR';
-
-  const classesDefs = [
-    {
-      id: 'defensora',
-      nome: 'Defensora',
-      icone: '🛡️',
-      cost: 3,
-      desc: 'Soldados guardam anel de defesa a 150px do ninho e absorvem mais dano.',
-    },
-    {
-      id: 'toxica',
-      nome: 'Tóxica',
-      icone: '🧪',
-      cost: 6,
-      desc: 'Soldados cospem ácido a 180px com corrosão contínua nos inimigos.',
-    },
-    {
-      id: 'gigante',
-      nome: 'Gigante',
-      icone: '🗿',
-      cost: 10,
-      desc: 'Soldados crescem 45%, ganham +40 HP, +5 dano e empurram inimigos ao atacar.',
-    },
-  ] as const;
+    : 'PLACAR';
 
   return (
     <div className={styles.pauseOverlay}>
@@ -189,9 +163,6 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
             <button className={styles.btnPrimary} onClick={onClose}>CONTINUAR</button>
             <button className={styles.btn} onClick={() => setTab('stats')}>ESTATÍSTICAS</button>
             <button className={styles.btn} onClick={() => setTab('colonia')}>COLÔNIA</button>
-            <button className={styles.btn} onClick={() => setTab('cartas')}>CARTAS ({hud.cards.length})</button>
-            <button className={styles.btn} onClick={() => setTab('classes')}>CLASSES (🦴 {hud.chitin})</button>
-            <button className={styles.btn} onClick={() => setTab('ach')}>CONQUISTAS</button>
             <button className={styles.btn} onClick={() => setTab('score')}>PLACAR</button>
             <button className={styles.btn} onClick={setModalExit}>SAIR PARA O MENU</button>
           </div>
@@ -207,83 +178,10 @@ function PauseMenu({ engine, hud, onClose }: { engine: GameEngine; hud: HudState
             <span>Conquistas desbloqueadas: {hud.achievements.done}/{hud.achievements.total}</span>
           </div>
         )}
-        {tab === 'cartas' && (
-          <div className={styles.cartasLista}>
-            <p className={styles.cartasResumo}>
-              🦴 Quitina: {hud.chitin} ·{' '}
-              {(['especializacao', 'comportamento', 'passiva'] as const).map((cat) => (
-                <span key={cat}>
-                  {SLOTS[cat].nome}: {hud.slots[cat]?.usados ?? 0}/{hud.slots[cat]?.teto ?? 0}{' '}
-                </span>
-              ))}
-            </p>
-            {hud.cards.length === 0 && (
-              <p className={styles.cartasVazio}>Nenhuma carta ainda — suba de nível para escolher!</p>
-            )}
-            {hud.cards.map((c) => (
-              <div key={c.id} className={styles.cartaRow}>
-                <span className={styles.cartaIcone}>{c.icone}</span>
-                <span className={styles.cartaNome}>{c.nome}</span>
-                <span className={styles.cartaPips}>
-                  {Array.from({ length: c.nivelMax }, (_, i) => (
-                    <span key={i} className={i < c.nivel ? styles.cartaPipOn : styles.cartaPipOff} />
-                  ))}
-                </span>
-                <span
-                  className={styles.cartaRar}
-                  style={{ color: (RARIDADES as Record<string, { cor: string }>)[c.raridade]?.cor }}
-                >
-                  {c.categoria === 'evolucao' ? 'EVOLUÇÃO' : `nv ${c.nivel}/${c.nivelMax}`}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-        {tab === 'classes' && (
-          <div className={styles.cartasLista}>
-            <p className={styles.cartasResumo}>
-              🦴 Quitina disponível: <strong>{hud.chitin}</strong>
-            </p>
-            {classesDefs.map((cls) => {
-              const unlocked = hud.unlockedClasses?.includes(cls.id);
-              return (
-                <div key={cls.id} className={styles.cartaRow} style={{ padding: '10px' }}>
-                  <span className={styles.cartaIcone} style={{ fontSize: '20px' }}>{cls.icone}</span>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                    <strong style={{ color: '#fde056', fontSize: '13px' }}>{cls.nome}</strong>
-                    <span style={{ fontSize: '11px', color: '#c4b5a0' }}>{cls.desc}</span>
-                  </div>
-                  {unlocked ? (
-                    <span style={{ color: '#5fce55', fontWeight: 'bold', fontSize: '12px' }}>✓ ATIVA</span>
-                  ) : (
-                    <button
-                      className={styles.btnPrimary}
-                      style={{ padding: '6px 12px', fontSize: '11px' }}
-                      disabled={hud.chitin < cls.cost}
-                      onClick={() => engine.unlockClass(cls.id)}
-                    >
-                      LIBERAR (🦴 {cls.cost})
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
         {tab === 'colonia' && (
           <div className={styles.stats}>
             {coloniaStats.map((st) => (
               <span key={st.label}>{st.label}: <strong>{st.value}</strong></span>
-            ))}
-          </div>
-        )}
-        {tab === 'ach' && (
-          <div className={styles.achList}>
-            {hud.achievements.progress.map((a) => (
-              <div key={a.id} className={styles.achRow}>
-                <span>{a.done ? '🏆' : '🔒'} {a.title}</span>
-                <span>{a.value}/{a.goal}</span>
-              </div>
             ))}
           </div>
         )}

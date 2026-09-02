@@ -24,7 +24,7 @@
   right: 14px;
   padding: 6px 12px;
   font-family: "'Courier New', monospace";
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: 1px;
   color: var(--c-dourado);
@@ -85,7 +85,7 @@
 .btn {
   padding: 14px 16px;
   font-family: inherit;
-  font-size: 17px;
+  font-size: 21px;
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--c-texto);
@@ -106,7 +106,7 @@
 .btnPlay {
   background: var(--c-laranja);
   border-color: #f08a4b;
-  font-size: 20px;
+  font-size: 24px;
   padding: 16px;
   animation: playGlow 1.6s ease-in-out infinite;
 }
@@ -122,7 +122,7 @@
 }
 
 .btnSmall {
-  font-size: 11px;
+  font-size: 15px;
   letter-spacing: 1px;
   padding: 10px 6px;
   line-height: 1.5;

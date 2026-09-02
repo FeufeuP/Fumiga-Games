@@ -4,6 +4,100 @@ Formato: fase do plano (`01_PLANO_DE_DESENVOLVIMENTO.md`) → o que entrou.
 
 ---
 
+## 0.4.0 — Interior rev 2.0: estrutura de formigueiro REAL (2026-09-02)
+
+- **Layout transcrito de uma imagem de referência real** (corte de ninho
+  em terra): segmentação por contraste local (δ=18) + filtro de maioria +
+  componentes conexos → posições (cx/cy) e tamanhos das 10 câmaras + eixo.
+- **Eixo serpenteante real**: polilinha (0.50,0.09)→…→(0.46,0.86) suavizada
+  por Catmull-Rom→bezier — desce da boca, deriva à esquerda no meio e volta
+  ao centro na base (Sala da Rainha).
+- **Câmaras com tamanhos variados** como na referência (MELHORIAS grande no
+  meio-esquerdo, MAPA/FORMIGAS compactas à direita etc.), semântica de
+  profundidade preservada (logística rasa → meta profunda).
+- **Relaxação determinística em runtime**: pares que colidam no viewport
+  atual são separados (passo limitado + resfriamento, ≤600 iter, sem
+  aleatoriedade); deriva 0pp em telas grandes (fiel), 5–27pp em apertadas.
+- Câmaras dimensionadas por `clamp(84px, 14.5vmin, 140px) × s` — encolhem
+  em telas baixas/paisagem.
+- **Validado em 14 viewports** (320×690 → 1920×1080, retrato+paisagem):
+  zero sobreposição visual; galerias ainda terminam na ponta das bocas.
+- Doc 10 → rev 2.0; `tsc` limpo; 144/144 testes; executável regenerado.
+
+## 0.3.5 — Túneis conectam nas bocas (sem sobrepor salas) (2026-09-02)
+
+- **Correção rev 1.2**: as galerias avançavam ~7un sobre as câmaras (o traço
+  cruzava a borda escavada). Agora o fim de cada galeria é calculado pela
+  **ponta da boca** — `tipX` derivado dos mesmos harmônicos do contorno da
+  caverna — e o cap arredondado (26px) encosta na silhueta sem cruzá-la.
+- Endpoint convertido de unidades da caixa (120) para % da tela usando a
+  largura real do `clamp()`; layout reconstruído no resize (`useMemo`).
+- Verificado numericamente em 320/390/768/1366/1920px: margem uniforme de
+  0,15un entre o alcance do cap e a ponta da boca — zero sobreposição.
+- `tsc` limpo; 144/144 testes; spec 10 em rev 1.2.
+
+## 0.3.4 — Câmaras escavadas orgânicas (doc 10, rev 1.1) (2026-09-02)
+
+- **As 10 salas deixaram de ser botões-retângulo**: agora são câmaras
+  escavadas — blobs SVG orgânicos gerados por harmonias de raio (2f/3f/5f)
+  com fases sorteadas (stream `Rng(0xcafe)`, independente do layout),
+  achatados verticalmente, cada uma com contorno único.
+- **Boca da câmara**: abertura afundada (~32% do raio) no lado voltado ao
+  eixo; as galerias agora terminam NA PONTA de cada túnel, entrando ~7un
+  pela boca — túnel e sala se encontram de verdade.
+- Camadas de escavação: borda externa `#14100c` → aro de terra `#8b562d` →
+  cavidade `#1f1008` → piso de terra `#3a2012`; ícone+rótulo flutuam na
+  cavidade com sombra dura; hover clareia a cavidade e amplia o ícone.
+- Spec atualizada (§8.1 + histórico 1.1); `tsc` limpo; 144/144 testes;
+  executável único regenerado.
+
+## 0.3.3 — Interior spec 1.0: formigueiro real de verdade (2026-09-02)
+
+- **Correção do 0.3.2**: galerias sem `position: absolute` deixavam as 10
+  câmaras amontoadas no canto superior esquerdo.
+- **Novo documento `10_DESIGN_INTERIOR_FORMIGUEIRO.md`** (spec 1.0): design
+  completo do ninho — topologia exata de **12 nós** (1 saída + 10 câmaras +
+  1 sala real) e **11 túneis** (eixo central + 10 galerias), bandas de
+  profundidade semânticas, offsets seedados, paleta e regras 16-bit.
+- **Interior reconstruído conforme a spec**: superfície com grama + monte
+  de terra e SAÍDA plantada nele; eixo central serpenteante desenhado em
+  SVG (traço duplo borda/miolo, `non-scaling-stroke`); 10 câmaras em
+  profundidades distintas (13,8%→67,3% da tela) ligadas por galerias bezier
+  curvas; Sala da Rainha na base. Distribuição verificada: sem sobreposição
+  (gap mínimo 10,5pp por lado) e offsets 8,8–21,2%.
+- `tsc --noEmit` limpo; 144/144 testes; executável único regenerado.
+
+## 0.3.2 — UI: fontes maiores + formigueiro real 16-bit (2026-09-02)
+
+- **Tipografia**: +4px em 81 tamanhos de fonte da interface (HUD, loja,
+  mapas, painéis, menus) — textos pequenos saíram de 9–13px para 13–17px.
+- **Interior redesenhado** (pixel-art 16-bit, corte transversal de ninho
+  real): SAÍDA no topo (sprite btn_back + rótulo), túnel central escavado
+  descendo até a SALA DA RAINHA na base (moldura dourada) e **10 câmaras
+  laterais espalhadas de forma orgânica** — seed fixa via `Rng` mulberry32:
+  desorganizado como um formigueiro de verdade, porém estável entre
+  sessões. Cada câmara liga ao túnel por uma galeria de comprimento variável.
+- **CARTAS, CLASSES e CONQUISTAS saíram do menu de pausa** e viraram câmaras
+  do formigueiro (🃏 CARTAS, 🦴 CLASSES, 🏆 CONQUISTAS). A pausa fica com
+  CONTINUAR / ESTATÍSTICAS / COLÔNIA / PLACAR / SAIR.
+- CSS morto do pause removido; `tsc --noEmit` limpo; 144/144 testes.
+
+## 0.3.1 — Botão voltar novo, plano 09 e executável único (2026-09-01)
+
+- **`btn_back.png` redesenhado**: quadrado 112×112 (múltiplo 2× do alvo de 56px
+  do CSS, `image-rendering: pixelated`), madeira nobre + moldura dourada +
+  seta de retorno, fundo externo 100% transparente (croma-key com
+  descontaminação de borda — zero resíduo, contorno com anti-alias).
+- **`Formigueiro-Jogo-Completo.html`**: executável único offline (~0,98 MB) —
+  JS + CSS inlinados e todos os 39 assets embutidos como data URI.
+  Gerado por `npm run build:single` (`scripts/build-singlefile.mjs`),
+  atendendo ao critério 4 de entrega do doc `09_PLANO_PROXIMAS_ATUALIZACOES.md`.
+- **Docs**: adicionado `09_PLANO_PROXIMAS_ATUALIZACOES.md` (Fases 6A–10A:
+  talentos, berçário, bestiário, save import/export + slots, Endless/Boss
+  Rush, clima por bioma, engenheiras) — nenhuma dessas fases implementada
+  ainda; são planejamento.
+- Testes: 144/144 passando; `tsc --noEmit` limpo.
+
 ## 0.1.0 — Reconstrução: Fases 1 e 2 (2026-08-31)
 
 > Contexto: o código-fonte da implementação anterior nunca foi enviado ao

@@ -98,7 +98,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 700;
 }
 .soundBtn {
@@ -145,7 +145,7 @@
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  font-size: 14px;
+  font-size: 18px;
   padding: 6px 10px;
   background: rgba(0, 0, 0, 0.25);
   border-radius: 6px;
@@ -172,7 +172,7 @@
 }
 .footer {
   margin: 0;
-  font-size: 13px;
+  font-size: 17px;
   color: #b8a87e;
 }
 
@@ -189,11 +189,11 @@
   padding: 10px;
   background: rgba(0, 0, 0, 0.25);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 17px;
   color: #b8a87e;
 }
 .stat strong {
-  font-size: 20px;
+  font-size: 24px;
   color: #fde056;
 }
 
@@ -225,18 +225,18 @@
   background: rgba(109, 84, 38, 0.18);
 }
 .achIcon {
-  font-size: 22px;
+  font-size: 26px;
 }
 .achText {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 12px;
+  font-size: 16px;
   color: #d8c9a3;
 }
 .achText strong {
-  font-size: 13px;
+  font-size: 17px;
   color: #f5e6c8;
 }
 .achBar {
@@ -250,7 +250,7 @@
   background: #6fdc55;
 }
 .achCount {
-  font-size: 12px;
+  font-size: 16px;
   color: #fde056;
   font-weight: 700;
 }
