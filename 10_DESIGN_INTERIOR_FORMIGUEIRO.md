@@ -135,8 +135,11 @@ no subsolo, desenhada em SVG:
   independente do stream do layout (`0x5eed`) — achatado verticalmente
   (×0,82) para ficar mais largo que alto, como câmaras reais;
 - **Boca da câmara**: o raio afunde ~32% no lado voltado ao eixo central —
-  é por essa abertura que a ponta da galeria entra (túnel e sala se
-  encontram de verdade, ~7un de sobreposição);
+  é ali, **na ponta da boca** (posição calculada pelos mesmos harmônicos
+  do contorno), que a galeria TERMINA: cap arredondado funde o túnel com a
+  abertura, **sem sobrepor a câmara** (rev 1.2). O endpoint é convertido
+  de unidades da caixa (120) para % da tela pela largura real do `clamp()`,
+  recalculado no resize;
 - **Camadas** (traçadas do mesmo path): borda externa `#14100c` (11un) →
   aro de terra `#8b562d` (6un) → cavidade escura `#1f1008` → arco de piso
   de terra `#3a2012` no fundo (profundidade);
@@ -184,3 +187,4 @@ no subsolo, desenhada em SVG:
 | 1.0 | 02/09/26 | spec completa: profundidades por banda, offsets seedados, galerias SVG bezier, superfície com grama/monte; implementação corrigida |
 | **1.0.1** | **02/09/26** | **auditoria spec↔código: alinhados 3 desvios — eixo passa a x=50±4 e y 9→74 exatos; boca do túnel `.mouth` (#1b0e06) adicionada sob o monte; galerias estendidas +6un até o centro da câmara** |
 | **1.1** | **02/09/26** | **câmaras deixam de ser botões: viram SALAS ESCAVADAS orgânicas (blob 2f/3f/5f, stream 0xcafe, boca voltada ao eixo); galerias terminam na PONTA de cada túnel, entrando pela boca (§8.1)** |
+| **1.2** | **02/09/26** | **conexão exata: fim da galeria calculado pela PONTA DA BOCA (tipX pelos mesmos harmônicos) — túnel encosta na silhueta com cap arredondado, sem cruzar a borda da câmara; layout recalculado no resize (clamp→%)** |

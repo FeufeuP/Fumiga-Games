@@ -12,7 +12,7 @@
  * Topologia: 12 nós (1 saída + 10 câmaras + 1 sala real) e 11 túneis
  * (1 eixo central + 10 galerias bezier).
  */
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { GameEngine } from '../engine/GameEngine';
 import type { HudState } from '../core/types';
 import { ANTS, MAPS, QUEEN, RESOURCES, type MapId, type ResourceKind } from '../core/constants';
@@ -58,7 +58,7 @@ const CHAMBERS: ChamberSpec[] = [
  * de raio (2f/3f/5f) com fases sorteadas, achatado verticalmente, com a
  * "boca" afundada no lado voltado ao eixo — por onde a galeria chega.
  */
-function cavePaths(rng: Rng, side: 'L' | 'R'): { cave: string; floor: string } {
+function cavePaths(rng: Rng, side: 'L' | 'R'): { cave: string; floor: string; tipInset: number } {
   const cx = 60;
   const cy = 48;
   const base = 40;
@@ -82,10 +82,16 @@ function cavePaths(rng: Rng, side: 'L' | 'R'): { cave: string; floor: string } {
   }
   const cave = `${pts.join(' ')} Z`;
   const floor = `M ${cx - 26} ${cy + 18} Q ${cx} ${cy + 30}, ${cx + 26} ${cy + 18} L ${cx + 22} ${cy + 12} Q ${cx} ${cy + 22}, ${cx - 22} ${cy + 12} Z`;
-  return { cave, floor };
+  // ponta da boca (t = mouth, mesmo cálculo do contorno): é AQUI que a
+  // galeria deve terminar — na silhueta, sem sobrepor a câmara (rev 1.2)
+  const r0 = base * (1 + a1 * Math.sin(p1) + a2 * Math.sin(p2) + a3 * Math.sin(p3)) * 0.68;
+  const tipX = cx + (side === 'L' ? r0 : -r0);
+  const tipInset = side === 'L' ? 120 - tipX : tipX; // recuo da boca a partir da borda da caixa
+  return { cave, floor, tipInset };
 }
 
-/** geometria gerada uma única vez por seed (doc 10, §5) */
+/** geometria gerada por seed (doc 10, §5); depende de vw p/ converter o
+ *  recuo da boca (unidades da caixa 120) em % da tela */
 interface ChamberLayout {
   spec: ChamberSpec;
   /** top em % da tela: 11% + frac × 56% (+ jitter) */
@@ -100,39 +106,46 @@ interface ChamberLayout {
   floor: string;
 }
 
-const LAYOUT: ChamberLayout[] = (() => {
+function buildLayout(vw: number): ChamberLayout[] {
   const rng = new Rng(0x5eed);
   const caveRng = new Rng(0xcafe); // stream separado p/ preservar o layout 1.0 auditado
+  const cwPx = Math.min(140, Math.max(112, vw * 0.16)); // espelha o clamp() do CSS .cave
+  const cwPct = (cwPx / vw) * 100;
   return CHAMBERS.map((spec) => {
     const s = spec.side === 'R' ? 1 : -1;
     const x = rng.float(8, 22); // offset horizontal (doc §4)
     const y = 11 + spec.frac * 56 + rng.float(-1.2, 1.2); // profundidade + jitter
-    // galeria: do eixo central até a PONTA na boca da câmara escavada (doc §6):
-    // adentra ~7un pela boca afundada — túnel e sala se encontram de verdade
+    const { cave, floor, tipInset } = cavePaths(caveRng, spec.side);
+    const insetPct = (tipInset / 120) * cwPct;
+    // galeria: do eixo central até a PONTA DA BOCA da câmara (rev 1.2) —
+    // termina a um raio-de-cap da silhueta: o cap arredondado encosta na
+    // boca sem cruzar a borda da câmara, em qualquer largura de tela
+    const capUn = 13 / (vw / 100); // raio do traço (26px) em unidades-%
+    const reach = x + insetPct - capUn - 0.15;
     const sx = 50 + s * 3.6;
-    const ex = 50 + s * (x + 7);
-    const c1x = 50 + s * (3.6 + (x + 7 - 3.6) * 0.35);
-    const c2x = 50 + s * (3.6 + (x + 7 - 3.6) * 0.8);
+    const ex = 50 + s * reach;
+    const c1x = 50 + s * (3.6 + (reach - 3.6) * 0.35);
+    const c2x = 50 + s * (3.6 + (reach - 3.6) * 0.8);
     const c1y = y + rng.float(-3, 3);
     const c2y = y + rng.float(-3, 3);
     const gallery = `M ${sx.toFixed(2)} ${y.toFixed(2)} C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${ex.toFixed(2)} ${y.toFixed(2)}`;
-    const { cave, floor } = cavePaths(caveRng, spec.side);
     return { spec, y, x, gallery, cave, floor };
   });
-})();
+}
 
 /** eixo central serpenteante: da boca (y=9) à Sala da Rainha (y=74), x=50±4 — doc §6 */
 const SHAFT = 'M 50 9 C 46 22, 54 36, 50 50 C 46 61, 54 68, 50 74';
 
-/** camada de túneis: cada traço é desenhado 2× (borda + miolo) */
-function NestTunnels() {
+/** camada de túneis: cada traço é desenhado 2× (borda + miolo);
+ *  galerias terminam na ponta da boca com cap arredondado (rev 1.2) */
+function NestTunnels({ layout }: { layout: ChamberLayout[] }) {
   return (
     <svg className={styles.svgLayer} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      {/* galerias (por baixo do eixo) */}
-      {LAYOUT.map(({ spec, gallery }) => (
+      {/* galerias (por baixo do eixo e das câmaras) */}
+      {layout.map(({ spec, gallery }) => (
         <g key={spec.id}>
-          <path d={gallery} fill="none" stroke="#8b562d" strokeWidth={26} strokeLinecap="square" vectorEffect="non-scaling-stroke" />
-          <path d={gallery} fill="none" stroke="#241109" strokeWidth={18} strokeLinecap="square" vectorEffect="non-scaling-stroke" />
+          <path d={gallery} fill="none" stroke="#8b562d" strokeWidth={26} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          <path d={gallery} fill="none" stroke="#241109" strokeWidth={18} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         </g>
       ))}
       {/* eixo central */}
@@ -173,13 +186,22 @@ export default function InteriorScreen({ engine, hud }: Props) {
   const [room, setRoom] = useState<RoomId>(null);
   const [shopTab, setShopTab] = useState('coleta');
 
+  // o recuo da boca depende da largura da câmara em % da tela → rebuild no resize
+  const [vw, setVw] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const layout = useMemo(() => buildLayout(vw), [vw]);
+
   const hungerPct = (hud.queenHunger / hud.queenHungerMax) * 100;
   const cemetery = engine.respawnQueue;
 
   return (
     <div className={styles.screen} style={{ backgroundImage: wood ? `url(${wood})` : undefined }}>
       {/* túneis: eixo central + galerias (doc §6) */}
-      <NestTunnels />
+      <NestTunnels layout={layout} />
 
       {/* superfície: grama + monte + boca + saída (doc §7) */}
       <div className={styles.surface}>
@@ -192,7 +214,7 @@ export default function InteriorScreen({ engine, hud }: Props) {
       </div>
 
       {/* câmaras escavadas em profundidades variadas (doc §3–5, rev 1.1) */}
-      {LAYOUT.map(({ spec, x, y, cave, floor }) => (
+      {layout.map(({ spec, x, y, cave, floor }) => (
         <button
           key={spec.id}
           className={styles.cave}

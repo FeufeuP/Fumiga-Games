@@ -4,6 +4,18 @@ Formato: fase do plano (`01_PLANO_DE_DESENVOLVIMENTO.md`) → o que entrou.
 
 ---
 
+## 0.3.5 — Túneis conectam nas bocas (sem sobrepor salas) (2026-09-02)
+
+- **Correção rev 1.2**: as galerias avançavam ~7un sobre as câmaras (o traço
+  cruzava a borda escavada). Agora o fim de cada galeria é calculado pela
+  **ponta da boca** — `tipX` derivado dos mesmos harmônicos do contorno da
+  caverna — e o cap arredondado (26px) encosta na silhueta sem cruzá-la.
+- Endpoint convertido de unidades da caixa (120) para % da tela usando a
+  largura real do `clamp()`; layout reconstruído no resize (`useMemo`).
+- Verificado numericamente em 320/390/768/1366/1920px: margem uniforme de
+  0,15un entre o alcance do cap e a ponta da boca — zero sobreposição.
+- `tsc` limpo; 144/144 testes; spec 10 em rev 1.2.
+
 ## 0.3.4 — Câmaras escavadas orgânicas (doc 10, rev 1.1) (2026-09-02)
 
 - **As 10 salas deixaram de ser botões-retângulo**: agora são câmaras
