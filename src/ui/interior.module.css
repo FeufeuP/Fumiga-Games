@@ -1,10 +1,9 @@
 /**
- * Interior do formigueiro — redesign 16-bit (0.3.2):
- * corte transversal de um formigueiro real: SAÍDA no topo, túnel central
- * descendo até a SALA DA RAINHA na base, câmaras laterais espalhadas
- * de forma orgânica e ligadas por galerias escavadas.
- * Estilo pixel-art: cores chapadas, bordas duras 3px, sombras em degrau,
- * sem gradientes suaves nem blur.
+ * Interior do formigueiro — spec 1.0 (doc 10_DESIGN_INTERIOR_FORMIGUEIRO.md):
+ * corte transversal de ninho real — superfície com grama/monte e SAÍDA no
+ * topo, eixo central serpenteante (SVG) até a SALA DA RAINHA na base e 10
+ * câmaras em profundidades variadas ligadas por galerias curvas.
+ * Pixel-art 16-bit: cores chapadas, bordas duras, sombras em degrau.
  */
 
 .screen {
@@ -16,54 +15,60 @@
   overflow: hidden;
 }
 
-/* ── túnel central (o eixo do formigueiro) ─────────────────── */
-.tunnel {
+/* ── camada dos túneis (eixo + galerias) ───────────────────── */
+.svgLayer {
   position: absolute;
-  top: 64px;
-  bottom: 48px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 96px;
-  background:
-    repeating-linear-gradient(
-      0deg,
-      rgba(0, 0, 0, 0.22) 0 6px,
-      rgba(0, 0, 0, 0) 6px 14px
-    ),
-    #2a170d;
-  border-left: 6px solid var(--c-terra-clara);
-  border-right: 6px solid var(--c-terra-clara);
-  box-shadow:
-    inset 6px 0 0 rgba(0, 0, 0, 0.3),
-    inset -6px 0 0 rgba(0, 0, 0, 0.3);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   z-index: 1;
 }
 
-/* boca do túnel junto à saída */
-.tunnel::before {
-  content: '';
+/* ── superfície: grama + monte + saída ─────────────────────── */
+.surface {
   position: absolute;
-  top: -6px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 60px;
-  height: 14px;
-  background: #1b0e06;
-  border: 3px solid #14100c;
-  border-top: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 9vh;
+  min-height: 84px;
+  z-index: 3;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.06) 0 6px,
+      rgba(255, 255, 255, 0.04) 6px 12px
+    ),
+    linear-gradient(180deg, #87c054 0%, #5a9b41 78%, #4c8839 100%);
+  border-bottom: 6px solid #3f7a2e;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25);
 }
 
-/* ── saída (topo da tela) ──────────────────────────────────── */
-.exitBtn {
+.mound {
   position: absolute;
-  top: 10px;
+  bottom: -4px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 3;
+  width: min(250px, 62vw);
+  height: 42px;
+  background: #7a4a2b;
+  clip-path: polygon(
+    50% 0%, 60% 14%, 70% 26%, 80% 40%, 90% 58%, 100% 100%,
+    0% 100%, 10% 58%, 20% 40%, 30% 26%, 40% 14%
+  );
+  filter: drop-shadow(0 3px 0 #14100c);
+}
+
+.exitBtn {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 16px 6px 8px;
+  padding: 5px 16px 5px 6px;
   color: var(--c-texto);
   letter-spacing: 2px;
   font-size: 16px;
@@ -91,41 +96,14 @@
   image-rendering: pixelated;
 }
 
-/* ── câmaras laterais + galerias ───────────────────────────── */
-.galley {
-  position: absolute;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  transform: translateY(-50%);
-}
-
-.galleyLeft {
-  right: calc(50% + 54px);
-  flex-direction: row;
-}
-
-.galleyRight {
-  left: calc(50% + 54px);
-  flex-direction: row;
-}
-
-.connector {
-  flex: 0 0 auto;
-  width: 14px; /* sobreposto inline com o offset orgânico de cada sala */
-  height: 16px;
-  background: #241109;
-  border-top: 3px solid #14100c;
-  border-bottom: 3px solid #14100c;
-}
-
+/* ── câmaras (botões) ──────────────────────────────────────── */
 .chamber {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
   min-width: 92px;
-  max-width: 31vw;
+  max-width: 30vw;
   padding: 10px 12px;
   color: var(--c-texto);
   text-align: center;
@@ -161,19 +139,19 @@
   line-height: 1.25;
 }
 
-/* ── sala da rainha (base do túnel) ────────────────────────── */
+/* ── sala da rainha (base do eixo) ────────────────────────── */
 .queenRoom {
   position: absolute;
   bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 3;
+  z-index: 4;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   width: min(640px, 94vw);
-  padding: 14px 18px 16px;
+  padding: 12px 18px 14px;
   text-align: center;
   background: #5d341e;
   border: 4px solid #14100c;
@@ -200,14 +178,14 @@
 }
 
 .queen {
-  width: 116px;
+  width: 108px;
   image-rendering: pixelated;
   filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.35));
   animation: queenBob 2s ease-in-out infinite; /* [O] bobbing suave da rainha */
 }
 
 .queenEmoji {
-  font-size: 76px;
+  font-size: 72px;
   line-height: 1;
   animation: queenBob 2s ease-in-out infinite;
 }
@@ -266,7 +244,7 @@
   padding: 8px 12px;
 }
 
-/* ── painel da sala aberta ─────────────────────────────────── */
+/* ── painel da câmara aberta ───────────────────────────────── */
 .overlay {
   position: absolute;
   inset: 0;
@@ -471,7 +449,7 @@
   box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45);
 }
 
-/* ── CARTAS da build (veio do menu de pausa) ───────────────── */
+/* ── CARTAS da build ───────────────────────────────────────── */
 .cardsList {
   display: flex;
   flex-direction: column;
@@ -524,7 +502,7 @@
   text-align: right;
 }
 
-/* ── CLASSES com quitina (veio do menu de pausa) ───────────── */
+/* ── CLASSES com quitina ───────────────────────────────────── */
 .classRow {
   display: flex;
   align-items: center;

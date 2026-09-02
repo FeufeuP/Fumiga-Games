@@ -1,10 +1,16 @@
 /**
- * Interior do formigueiro — redesenho 0.3.2 (16-bit):
- * corte transversal de um formigueiro de verdade — SAÍDA no topo,
- * túnel central descendo até a SALA DA RAINHA na base e câmaras
- * laterais espalhadas de forma orgânica (layout determinístico por
- * seed, mas "desorganizado" como num ninho real).
- * CARTAS, CLASSES e CONQUISTAS agora vivem AQUI (saíram do menu de pausa).
+ * Interior do formigueiro — spec 1.0 (doc 10_DESIGN_INTERIOR_FORMIGUEIRO.md).
+ *
+ * Corte transversal de um ninho real:
+ *  · SUPERFÍCIE (grama + monte de terra) com a SAÍDA no topo;
+ *  · EIXO CENTRAL serpenteante (SVG) descendo até a SALA DA RAINHA na base;
+ *  · 10 CÂMARAS em profundidades variadas (bandas semânticas), lados
+ *    alternados, offsets horizontais e curvaturas de galeria sorteados por
+ *    seed fixa (Rng 0x5eed) — desorganizado como um ninho de verdade,
+ *    porém idêntico entre sessões (regra #3 de engenharia).
+ *
+ * Topologia: 12 nós (1 saída + 10 câmaras + 1 sala real) e 11 túneis
+ * (1 eixo central + 10 galerias bezier).
  */
 import { useState } from 'react';
 import type { GameEngine } from '../engine/GameEngine';
@@ -25,48 +31,77 @@ const ALL_MAPS: MapId[] = ['campo', 'pantano', 'deserto', 'montanha', 'caverna',
 type RoomId = 'cemetery' | 'achievements' | 'missions' | 'ants' | 'map' | 'upgrades'
   | 'inventory' | 'rebirth' | 'cards' | 'classes' | null;
 
-interface RoomDef {
+/** banda de profundidade (frac 0..1 na zona útil) + lado — doc 10, §3 */
+interface ChamberSpec {
   id: Exclude<RoomId, null>;
   label: string;
   icon: string;
+  side: 'L' | 'R';
+  frac: number;
 }
 
-/** as 10 câmaras do ninho (conquistas/cartas/classes incluídas) */
-const ROOMS: RoomDef[] = [
-  { id: 'cemetery', label: 'CEMITÉRIO', icon: '⚰️' },
-  { id: 'achievements', label: 'CONQUISTAS', icon: '🏆' },
-  { id: 'missions', label: 'MISSÕES', icon: '📜' },
-  { id: 'ants', label: 'FORMIGAS', icon: '🐜' },
-  { id: 'map', label: 'MAPA', icon: '🗺️' },
-  { id: 'upgrades', label: 'MELHORIAS', icon: '⚙️' },
-  { id: 'inventory', label: 'INVENTÁRIO', icon: '🎒' },
-  { id: 'rebirth', label: 'RENASCER', icon: '🔄' },
-  { id: 'cards', label: 'CARTAS', icon: '🃏' },
-  { id: 'classes', label: 'CLASSES', icon: '🦴' },
+const CHAMBERS: ChamberSpec[] = [
+  { id: 'cemetery', label: 'CEMITÉRIO', icon: '⚰️', side: 'L', frac: 0.06 },
+  { id: 'map', label: 'MAPA', icon: '🗺️', side: 'R', frac: 0.17 },
+  { id: 'missions', label: 'MISSÕES', icon: '📜', side: 'L', frac: 0.28 },
+  { id: 'ants', label: 'FORMIGAS', icon: '🐜', side: 'R', frac: 0.39 },
+  { id: 'inventory', label: 'INVENTÁRIO', icon: '🎒', side: 'L', frac: 0.5 },
+  { id: 'upgrades', label: 'MELHORIAS', icon: '⚙️', side: 'R', frac: 0.61 },
+  { id: 'achievements', label: 'CONQUISTAS', icon: '🏆', side: 'L', frac: 0.71 },
+  { id: 'cards', label: 'CARTAS', icon: '🃏', side: 'R', frac: 0.81 },
+  { id: 'classes', label: 'CLASSES', icon: '🦴', side: 'L', frac: 0.91 },
+  { id: 'rebirth', label: 'RENASCER', icon: '🔄', side: 'R', frac: 0.99 },
 ];
 
-/**
- * Distribuição "desorganizada" das câmaras ao longo do túnel central:
- * embaralhamento com seed fixa (Rng mulberry32) — orgânico, porém estável
- * entre renders/sessions, como manda a regra #3 de engenharia.
- * 5 faixas de profundidade × 2 lados, com jitter vertical e galerias
- * de comprimento variável.
- */
-const LAYOUT: Array<{ room: RoomDef; side: 'L' | 'R'; y: number; off: number }> = (() => {
+/** geometria gerada uma única vez por seed (doc 10, §5) */
+interface ChamberLayout {
+  spec: ChamberSpec;
+  /** top em % da tela: 11% + frac × 56% (+ jitter) */
+  y: number;
+  /** afastamento horizontal do eixo, em % da largura */
+  x: number;
+  /** path SVG da galeria (borda e miolo usam o mesmo path) */
+  gallery: string;
+}
+
+const LAYOUT: ChamberLayout[] = (() => {
   const rng = new Rng(0x5eed);
-  const pool = [...ROOMS];
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = rng.int(0, i);
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-  const rows = [0.2, 0.32, 0.44, 0.56, 0.68];
-  return pool.map((room, i) => ({
-    room,
-    side: i % 2 === 0 ? ('L' as const) : ('R' as const),
-    y: rows[Math.floor(i / 2)] + rng.float(-0.022, 0.022),
-    off: rng.int(10, 34),
-  }));
+  return CHAMBERS.map((spec) => {
+    const s = spec.side === 'R' ? 1 : -1;
+    const x = rng.float(8, 22); // offset horizontal (doc §4)
+    const y = 11 + spec.frac * 56 + rng.float(-1.2, 1.2); // profundidade + jitter
+    // galeria: do eixo central até o centro da câmara, curva orgânica (doc §6)
+    const sx = 50 + s * 3.6;
+    const ex = 50 + s * x;
+    const c1x = 50 + s * (3.6 + (x - 3.6) * 0.35);
+    const c2x = 50 + s * (3.6 + (x - 3.6) * 0.8);
+    const c1y = y + rng.float(-3, 3);
+    const c2y = y + rng.float(-3, 3);
+    const gallery = `M ${sx.toFixed(2)} ${y.toFixed(2)} C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${ex.toFixed(2)} ${y.toFixed(2)}`;
+    return { spec, y, x, gallery };
+  });
 })();
+
+/** eixo central serpenteante: da boca (y=8) à Sala da Rainha (y=76) — doc §6 */
+const SHAFT = 'M 50 8 C 46.5 22, 53.5 36, 50 50 C 47 61, 53 68, 50 76';
+
+/** camada de túneis: cada traço é desenhado 2× (borda + miolo) */
+function NestTunnels() {
+  return (
+    <svg className={styles.svgLayer} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      {/* galerias (por baixo do eixo) */}
+      {LAYOUT.map(({ spec, gallery }) => (
+        <g key={spec.id}>
+          <path d={gallery} fill="none" stroke="#8b562d" strokeWidth={26} strokeLinecap="square" vectorEffect="non-scaling-stroke" />
+          <path d={gallery} fill="none" stroke="#241109" strokeWidth={18} strokeLinecap="square" vectorEffect="non-scaling-stroke" />
+        </g>
+      ))}
+      {/* eixo central */}
+      <path d={SHAFT} fill="none" stroke="#8b562d" strokeWidth={76} strokeLinecap="square" vectorEffect="non-scaling-stroke" />
+      <path d={SHAFT} fill="none" stroke="#2a170d" strokeWidth={64} strokeLinecap="square" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
 
 const CLASSES_DEFS = [
   {
@@ -104,36 +139,38 @@ export default function InteriorScreen({ engine, hud }: Props) {
 
   return (
     <div className={styles.screen} style={{ backgroundImage: wood ? `url(${wood})` : undefined }}>
-      {/* saída no topo do túnel */}
-      <button className={styles.exitBtn} onClick={() => engine.exitInterior()} aria-label="Sair do formigueiro">
-        {back && <img src={back} alt="Saída" />}
-        <span>SAÍDA</span>
-      </button>
+      {/* túneis: eixo central + galerias (doc §6) */}
+      <NestTunnels />
 
-      {/* túnel central até a sala da rainha */}
-      <div className={styles.tunnel} />
+      {/* superfície: grama + monte + saída (doc §7) */}
+      <div className={styles.surface}>
+        <div className={styles.mound} />
+        <button className={styles.exitBtn} onClick={() => engine.exitInterior()} aria-label="Sair do formigueiro">
+          {back && <img src={back} alt="Saída" />}
+          <span>SAÍDA</span>
+        </button>
+      </div>
 
-      {/* câmaras laterais espalhadas (formigueiro real) */}
-      {LAYOUT.map(({ room: r, side, y, off }) => {
-        const chamber = (
-          <button className={styles.chamber} onClick={() => setRoom(r.id)}>
-            <span className={styles.chamberIcon}>{r.icon}</span>
-            <span className={styles.chamberLabel}>{r.label}</span>
-          </button>
-        );
-        const connector = <span className={styles.connector} style={{ width: off }} />;
-        return (
-          <div
-            key={r.id}
-            className={side === 'L' ? styles.galleyLeft : styles.galleyRight}
-            style={{ top: `${(y * 100).toFixed(2)}%` }}
-          >
-            {side === 'L' ? <>{chamber}{connector}</> : <>{connector}{chamber}</>}
-          </div>
-        );
-      })}
+      {/* câmaras em profundidades variadas (doc §3–5) */}
+      {LAYOUT.map(({ spec, x, y }) => (
+        <button
+          key={spec.id}
+          className={styles.chamber}
+          style={{
+            top: `${y.toFixed(2)}%`,
+            ...(spec.side === 'R'
+              ? { left: `calc(50% + ${x.toFixed(2)}%)` }
+              : { right: `calc(50% + ${x.toFixed(2)}%)` }),
+            transform: 'translateY(-50%)',
+          }}
+          onClick={() => setRoom(spec.id)}
+        >
+          <span className={styles.chamberIcon}>{spec.icon}</span>
+          <span className={styles.chamberLabel}>{spec.label}</span>
+        </button>
+      ))}
 
-      {/* sala da rainha na base do túnel */}
+      {/* sala da rainha na base do eixo */}
       <div className={styles.queenRoom}>
         <h2 className={styles.title}>👑 SALA DA RAINHA</h2>
         <div className={styles.queenRow}>
@@ -172,7 +209,7 @@ export default function InteriorScreen({ engine, hud }: Props) {
         <div className={styles.overlay} onClick={() => setRoom(null)}>
           <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
             <header className={styles.panelHeader}>
-              <h3>{ROOMS.find((r) => r.id === room)?.label}</h3>
+              <h3>{CHAMBERS.find((c) => c.id === room)?.label}</h3>
               <button className={styles.closeBtn} onClick={() => setRoom(null)}>✕</button>
             </header>
             <div className={styles.panelBody}>

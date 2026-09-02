@@ -4,6 +4,22 @@ Formato: fase do plano (`01_PLANO_DE_DESENVOLVIMENTO.md`) → o que entrou.
 
 ---
 
+## 0.3.3 — Interior spec 1.0: formigueiro real de verdade (2026-09-02)
+
+- **Correção do 0.3.2**: galerias sem `position: absolute` deixavam as 10
+  câmaras amontoadas no canto superior esquerdo.
+- **Novo documento `10_DESIGN_INTERIOR_FORMIGUEIRO.md`** (spec 1.0): design
+  completo do ninho — topologia exata de **12 nós** (1 saída + 10 câmaras +
+  1 sala real) e **11 túneis** (eixo central + 10 galerias), bandas de
+  profundidade semânticas, offsets seedados, paleta e regras 16-bit.
+- **Interior reconstruído conforme a spec**: superfície com grama + monte
+  de terra e SAÍDA plantada nele; eixo central serpenteante desenhado em
+  SVG (traço duplo borda/miolo, `non-scaling-stroke`); 10 câmaras em
+  profundidades distintas (13,8%→67,3% da tela) ligadas por galerias bezier
+  curvas; Sala da Rainha na base. Distribuição verificada: sem sobreposição
+  (gap mínimo 10,5pp por lado) e offsets 8,8–21,2%.
+- `tsc --noEmit` limpo; 144/144 testes; executável único regenerado.
+
 ## 0.3.2 — UI: fontes maiores + formigueiro real 16-bit (2026-09-02)
 
 - **Tipografia**: +4px em 81 tamanhos de fonte da interface (HUD, loja,
