@@ -1,7 +1,7 @@
 {
   "name": "formigueiro",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "Formigueiro — jogo de colônia, exploração e sobrevivência roguelike.",
   "type": "module",
   "scripts": {
@@ -9,6 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "build:single": "npm run build && node scripts/build-singlefile.mjs",
+    "assets:tiles": "python3 scripts/extract-tiles.py",
+    "assets:font": "python3 scripts/extract-font.py && python3 scripts/build-font.py",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

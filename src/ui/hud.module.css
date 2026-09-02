@@ -113,7 +113,7 @@
   background: #241d12;
   border: 2px solid #6d5426;
   color: #fde056;
-  font-family: "'Courier New', monospace";
+  font-family: var(--font-pixel);
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 1px;

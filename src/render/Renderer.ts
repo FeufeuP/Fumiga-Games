@@ -9,7 +9,29 @@ import { BOSS_SMASH } from '../core/constants';
 import type { Scene } from '../core/types';
 import type { Camera } from './Camera';
 import { drawAnt, drawEmoji, drawEnemyFrames, drawSprite, type SpriteSet } from './sprites';
+import { DEFAULT_PARAMS, TerrainCache, type TerrainParams } from './terrain';
+import type { MapId } from '../core/constants';
+
+/**
+ * Ajuste do chão por bioma. `dirtAt`/`sandAt` movem os limiares do ruído:
+ * quanto menor, mais cedo a mancha aparece. `blend` é a largura da faixa de
+ * mistura (transição suave); `detail` a densidade de flor/pedra/moita.
+ */
+const TERRAIN_PARAMS: Partial<Record<MapId, TerrainParams>> = {
+  // Em todos os biomas "grass" = a BASE da folha e "dirt"/"sand" = as manchas
+  // (ver a classificação relativa em scripts/extract-tiles.py). Por isso os
+  // limiares são parecidos: o que muda é a cor que a arte traz.
+  // Campo: tapete verde com clareiras de terra e areia rara.
+  campo: { scale: 0.055, dirtAt: 0.62, sandAt: 0.79, blend: 0.085, detail: 0.30 },
+  // Pântano: musgo escuro com poças de lama um pouco mais frequentes.
+  pantano: { scale: 0.050, dirtAt: 0.58, sandAt: 0.99, blend: 0.09, detail: 0.26 },
+  // Deserto: a folha é toda areia — sem mancha, só variação de tile.
+  deserto: { scale: 0.062, dirtAt: 0.99, sandAt: 0.99, blend: 0.09, detail: 0.22 },
+};
 import type { Ant, Enemy, Prop, ResourceNode } from '../core/types';
+
+/** Mesma família da UI — a fonte pixel oficial do jogo. */
+const CANVAS_FONT = "'Formigueiro', 'Courier New', monospace";
 
 interface View { left: number; top: number; right: number; bottom: number }
 
@@ -24,6 +46,9 @@ export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private canvas: HTMLCanvasElement;
   private onResize: () => void;
+  /** chão procedural — reconstruído quando o mapa muda */
+  private terrain: TerrainCache | null = null;
+  private terrainMap: string | null = null;
   /** [O] nuvens à deriva (screen-space) */
   private clouds = Array.from({ length: 5 }, (_, i) => ({
     speed: 14 + i * 5,
@@ -148,7 +173,7 @@ export class Renderer {
       ctx.stroke();
       if (pronto) {
         ctx.fillStyle = 'rgba(251,208,70,0.9)';
-        ctx.font = '10px "Courier New", monospace';
+        ctx.font = `10px ${CANVAS_FONT}`;
         ctx.textAlign = 'center';
         ctx.fillText('🪤', t.x, t.y + 3);
       }
@@ -168,7 +193,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(c.x, c.y + bob, 26, 0, Math.PI * 2);
       ctx.fill();
-      ctx.font = '22px "Courier New", monospace';
+      ctx.font = `22px ${CANVAS_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('🎁', c.x, c.y + bob);
@@ -210,7 +235,7 @@ export class Renderer {
       const k = t.t / t.tMax;              // 1 → 0
       const sobe = (1 - k) * 26;           // flutua para cima
       const alpha = Math.min(1, k * 2.2);  // some no fim
-      ctx.font = 'bold 13px "Courier New", monospace';
+      ctx.font = `13px ${CANVAS_FONT}`;
       ctx.lineWidth = 3;
       ctx.strokeStyle = `rgba(20,18,15, ${alpha.toFixed(3)})`;
       ctx.fillStyle = `rgba(${t.color}, ${alpha.toFixed(3)})`;
@@ -256,9 +281,30 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** [O] chão quadriculado em 2 tons (célula 48, como a névoa). */
+  /**
+   * Chão do mundo. Quando o mapa tem atlas de tiles (arte de referência
+   * fatiada por `scripts/extract-tiles.py`), usa a geração procedural com
+   * transição suave entre grama/terra/areia; senão, cai no quadriculado
+   * original de 2 tons.
+   */
   private drawGround(ctx: CanvasRenderingContext2D, scene: Scene, view: View): void {
     const map = MAPS[scene.mapId];
+    const atlas = this.sprites?.terrain?.[scene.mapId];
+
+    if (atlas) {
+      if (this.terrainMap !== scene.mapId || !this.terrain) {
+        const params = TERRAIN_PARAMS[scene.mapId] ?? DEFAULT_PARAMS;
+        if (this.terrain) this.terrain.reset(atlas, map.seed, params);
+        else this.terrain = new TerrainCache(atlas, map.seed, params);
+        this.terrainMap = scene.mapId;
+      }
+      // fundo sólido evita piscar de 1px nas beiradas durante o scroll
+      ctx.fillStyle = map.ground;
+      ctx.fillRect(view.left - 2, view.top - 2, view.right - view.left + 4, view.bottom - view.top + 4);
+      this.terrain.drawView(ctx, view.left - 2, view.top - 2, view.right + 2, view.bottom + 2);
+      return;
+    }
+
     ctx.fillStyle = map.ground;
     ctx.fillRect(view.left - 2, view.top - 2, view.right - view.left + 4, view.bottom - view.top + 4);
 
