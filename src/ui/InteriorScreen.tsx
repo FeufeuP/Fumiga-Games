@@ -70,11 +70,12 @@ const LAYOUT: ChamberLayout[] = (() => {
     const s = spec.side === 'R' ? 1 : -1;
     const x = rng.float(8, 22); // offset horizontal (doc §4)
     const y = 11 + spec.frac * 56 + rng.float(-1.2, 1.2); // profundidade + jitter
-    // galeria: do eixo central até o centro da câmara, curva orgânica (doc §6)
+    // galeria: do eixo central até o CENTRO da câmara (termina sob ela),
+    // curva orgânica (doc §6) — +6 unidades adentram a câmara
     const sx = 50 + s * 3.6;
-    const ex = 50 + s * x;
-    const c1x = 50 + s * (3.6 + (x - 3.6) * 0.35);
-    const c2x = 50 + s * (3.6 + (x - 3.6) * 0.8);
+    const ex = 50 + s * (x + 6);
+    const c1x = 50 + s * (3.6 + (x + 6 - 3.6) * 0.35);
+    const c2x = 50 + s * (3.6 + (x + 6 - 3.6) * 0.8);
     const c1y = y + rng.float(-3, 3);
     const c2y = y + rng.float(-3, 3);
     const gallery = `M ${sx.toFixed(2)} ${y.toFixed(2)} C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${ex.toFixed(2)} ${y.toFixed(2)}`;
@@ -82,8 +83,8 @@ const LAYOUT: ChamberLayout[] = (() => {
   });
 })();
 
-/** eixo central serpenteante: da boca (y=8) à Sala da Rainha (y=76) — doc §6 */
-const SHAFT = 'M 50 8 C 46.5 22, 53.5 36, 50 50 C 47 61, 53 68, 50 76';
+/** eixo central serpenteante: da boca (y=9) à Sala da Rainha (y=74), x=50±4 — doc §6 */
+const SHAFT = 'M 50 9 C 46 22, 54 36, 50 50 C 46 61, 54 68, 50 74';
 
 /** camada de túneis: cada traço é desenhado 2× (borda + miolo) */
 function NestTunnels() {
@@ -142,9 +143,10 @@ export default function InteriorScreen({ engine, hud }: Props) {
       {/* túneis: eixo central + galerias (doc §6) */}
       <NestTunnels />
 
-      {/* superfície: grama + monte + saída (doc §7) */}
+      {/* superfície: grama + monte + boca + saída (doc §7) */}
       <div className={styles.surface}>
         <div className={styles.mound} />
+        <div className={styles.mouth} />
         <button className={styles.exitBtn} onClick={() => engine.exitInterior()} aria-label="Sair do formigueiro">
           {back && <img src={back} alt="Saída" />}
           <span>SAÍDA</span>

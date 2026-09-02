@@ -59,6 +59,20 @@
   filter: drop-shadow(0 3px 0 #14100c);
 }
 
+/* boca do túnel: retângulo escuro abrindo no monte (doc §6) */
+.mouth {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 76px;
+  height: 16px;
+  background: #1b0e06;
+  border: 3px solid #14100c;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+}
+
 .exitBtn {
   position: absolute;
   bottom: 10px;

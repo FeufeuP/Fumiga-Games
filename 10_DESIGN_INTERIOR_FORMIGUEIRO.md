@@ -152,6 +152,7 @@ Cada traço é desenhado **duas vezes** (borda depois miolo) com
 | Bandas/lados/offsets/jitter | `src/ui/InteriorScreen.tsx` | `CHAMBERS` + `LAYOUT` (Rng 0x5eed) |
 | Camada de túneis | `src/ui/InteriorScreen.tsx` | `<NestTunnels>` (SVG) |
 | Superfície/monte | `src/ui/interior.module.css` | `.surface`, `.mound` |
+| Boca do túnel | `src/ui/interior.module.css` | `.mouth` |
 | Câmara/galeria/zoom visual | `src/ui/interior.module.css` | `.chamber`, `.galleyL/R` |
 | Sala real | `src/ui/interior.module.css` | `.queenRoom` |
 
@@ -160,4 +161,5 @@ Cada traço é desenhado **duas vezes** (borda depois miolo) com
 | Versão | Data | Mudança |
 |---|---|---|
 | 0.3.2 | 01/09/26 | primeiro túnel central — galerias sem `position: absolute` ⇒ câmaras amontoadas no canto superior esquerdo |
-| **1.0** | **02/09/26** | **spec completa: profundidades por banda, offsets seedados, galerias SVG bezier, superfície com grama/monte; implementação corrigida** |
+| 1.0 | 02/09/26 | spec completa: profundidades por banda, offsets seedados, galerias SVG bezier, superfície com grama/monte; implementação corrigida |
+| **1.0.1** | **02/09/26** | **auditoria spec↔código: alinhados 3 desvios — eixo passa a x=50±4 e y 9→74 exatos; boca do túnel `.mouth` (#1b0e06) adicionada sob o monte; galerias estendidas +6un até o centro da câmara** |
