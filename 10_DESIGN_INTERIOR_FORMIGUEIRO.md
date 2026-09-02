@@ -38,18 +38,19 @@ e horizontal — todas têm curvatura/ângulo orgânico (estilo raiz).
 Profundidade = posição no eixo (% da zona útil, de cima para baixo).
 Lados alternam; o desalinhamento vem do jitter e dos offsets horizontais.
 
-| Band. | Câmara | Ícone | Lado | Profund. (frac) | Offset X (seed) | Função |
+| # | Câmara | Ícone | cx | cy (profund.) | tam. s | Função |
 |---|---|---|---|---|---|---|
-| 1 | CEMITÉRIO | ⚰️ | E | 0.06 | 8–22% | fila de renascimento das formigas |
-| 2 | MAPA | 🗺️ | D | 0.17 | 8–22% | seletor dos 6 biomas |
-| 3 | MISSÕES | 📜 | E | 0.28 | 8–22% | 44 missões com progresso |
-| 4 | FORMIGAS | 🐜 | D | 0.39 | 8–22% | censo por classe |
-| 5 | INVENTÁRIO | 🎒 | E | 0.50 | 8–22% | estoque de recursos |
-| 6 | MELHORIAS | ⚙️ | D | 0.61 | 8–22% | loja (17 melhorias, 4 abas) |
-| 7 | CONQUISTAS | 🏆 | E | 0.71 | 8–22% | 27 conquistas (veio da pausa) |
-| 8 | CARTAS | 🃏 | D | 0.81 | 8–22% | build roguelike de 74 cartas (veio da pausa) |
-| 9 | CLASSES | 🦴 | E | 0.91 | 8–22% | Defensora/Tóxica/Gigante c/ quitina (veio da pausa) |
-| 10 | RENASCER | 🔄 | D | 0.99 | 8–22% | prestígio + placar |
+| 1 | CEMITÉRIO | ⚰️ | 0.30 | 0.20 | 0.90 | fila de renascimento das formigas |
+| 2 | MAPA | 🗺️ | 0.80 | 0.27 | 0.85 | seletor dos 6 biomas |
+| 3 | MISSÕES | 📜 | 0.18 | 0.34 | 1.10 | 44 missões com progresso |
+| 4 | FORMIGAS | 🐜 | 0.88 | 0.40 | 0.85 | censo por classe |
+| 5 | INVENTÁRIO | 🎒 | 0.60 | 0.42 | 1.00 | estoque de recursos |
+| 6 | MELHORIAS | ⚙️ | 0.42 | 0.53 | 1.20 | loja (17 melhorias, 4 abas) |
+| 7 | CONQUISTAS | 🏆 | 0.26 | 0.63 | 1.05 | 27 conquistas (veio da pausa) |
+| 8 | CARTAS | 🃏 | 0.15 | 0.73 | 0.95 | build roguelike de 74 cartas (veio da pausa) |
+| 9 | CLASSES | 🦴 | 0.66 | 0.72 | 1.00 | Defensora/Tóxica/Gigante c/ quitina (veio da pausa) |
+| 10 | RENASCER | 🔄 | 0.86 | 0.77 | 0.90 | prestígio + placar |
+| — | SALA DA RAINHA | 👑 | 0.46 | ~0.88 | grande | base do eixo (moldura dourada) |
 
 **Semântica de profundidade:** funções logísticas ficam rasas (perto da
 saída); funções de progressão/meta ficam profundas (perto da Rainha).
@@ -78,18 +79,27 @@ saída); funções de progressão/meta ficam profundas (perto da Rainha).
 - Offset horizontal (afastamento do eixo): `left/right: calc(50% + X%)`
   com **X individual por câmara, sorteado por seed** (8–22% da largura).
 
-## 5. Geração determinística (organicamente desorganizada)
+## 5. Estrutura extraída de referência real (rev 2.0)
 
-Tudo vem de `new Rng(0x5eed)` (mulberry32, regra #3 do plano — nada de
-`Math.random()` solto):
+As posições saem de uma **imagem real de corte de ninho em terra** (estilo
+confirmado pelo jogador), processada por segmentação:
 
-1. **Offset X** por câmara: `rng.float(8, 22)` (% da largura);
-2. **Jitter Y** por câmara: `rng.float(-1.2, +1.2)` pontos percentuais;
-3. **Curvatura da galeria**: pontos de controle do bezier com desvios
-   `rng.float(-3, +3)` — um gancho diferente para cada galeria.
+1. conversão para luminância e **contraste local** (diferença da média
+   borrada, δ=18) isola vazios (túneis/câmaras) da textura do solo;
+2. filtro de maioria 3×3 (2 passes) consolida as cavidades;
+3. **componentes conexos** medem centro/tamanho de cada câmara;
+4. transcrição manual para a tabela do §3 (12 nós) + polilinha do eixo (§6).
 
-Resultado: **desorganizado como um ninho real, mas idêntico em toda sessão**
-(um formigueiro não se reorganiza cada vez que você olha para ele).
+Sobre isso roda a **relaxação determinística em runtime** (`buildLayout`):
+pares de câmaras cujas caixas colidam NO VIEWPORT ATUAL são empurrados
+metade da violação por iteração (com resfriamento 0.995^i, ≤600 iter),
+priorizando separação vertical, com limites de superfície/sala real/laterais.
+Em telas grandes não mexe nada (deriva 0pp = fiel à referência); em telas
+apertadas abre espaço (~5–27pp). Sem `Math.random()` — mesmo viewport,
+mesmo layout, sempre.
+
+Validado em 14 viewports (320×690 … 1920×1080, retrato e paisagem):
+**zero sobreposição visual** (blobs reais ≈72% da caixa).
 
 ## 6. Túneis (camada SVG)
 
@@ -98,7 +108,7 @@ tela (`vector-effect: non-scaling-stroke` → espessuras em px reais):
 
 | Elemento | Forma | Borda | Miolo |
 |---|---|---|---|
-| Eixo central | path cúbico serpenteando x=50±4, da boca (y≈9) à Rainha (y≈74) | 76px `#8b562d` | 64px `#2a170d` |
+| Eixo central | **polilinha da referência** (Catmull-Rom→bezier): (0.50,0.09)→(0.47,0.20)→(0.42,0.30)→(0.38,0.40)→(0.42,0.50)→(0.46,0.62)→(0.43,0.74)→(0.46,0.86) | 76px `#8b562d` | 64px `#2a170d` |
 | Galerias (×10) | path cúbico do eixo ao centro da câmara | 26px `#8b562d` | 18px `#241109` |
 | Boca do túnel | retângulo sob o monte | — | `#1b0e06` |
 
@@ -172,11 +182,11 @@ no subsolo, desenhada em SVG:
 
 | Peça | Arquivo | Símbolo |
 |---|---|---|
-| Bandas/lados/offsets/jitter | `src/ui/InteriorScreen.tsx` | `CHAMBERS` + `LAYOUT` (Rng 0x5eed) |
+| Posições extraídas da referência | `src/ui/InteriorScreen.tsx` | `CHAMBERS` (cx/cy/s) |
 | Camada de túneis | `src/ui/InteriorScreen.tsx` | `<NestTunnels>` (SVG) |
 | Superfície/monte | `src/ui/interior.module.css` | `.surface`, `.mound` |
 | Boca do túnel | `src/ui/interior.module.css` | `.mouth` |
-| Câmara escavada | `src/ui/InteriorScreen.tsx` + `interior.module.css` | `cavePaths()`, `.cave*` |
+| Câmara escavada + relaxação | `src/ui/InteriorScreen.tsx` + `interior.module.css` | `cavePaths()`, `buildLayout()`, `.cave*` |
 | Sala real | `src/ui/interior.module.css` | `.queenRoom` |
 
 ## 12. Histórico de revisões
@@ -188,3 +198,5 @@ no subsolo, desenhada em SVG:
 | **1.0.1** | **02/09/26** | **auditoria spec↔código: alinhados 3 desvios — eixo passa a x=50±4 e y 9→74 exatos; boca do túnel `.mouth` (#1b0e06) adicionada sob o monte; galerias estendidas +6un até o centro da câmara** |
 | **1.1** | **02/09/26** | **câmaras deixam de ser botões: viram SALAS ESCAVADAS orgânicas (blob 2f/3f/5f, stream 0xcafe, boca voltada ao eixo); galerias terminam na PONTA de cada túnel, entrando pela boca (§8.1)** |
 | **1.2** | **02/09/26** | **conexão exata: fim da galeria calculado pela PONTA DA BOCA (tipX pelos mesmos harmônicos) — túnel encosta na silhueta com cap arredondado, sem cruzar a borda da câmara; layout recalculado no resize (clamp→%)** |
+| **2.0** | **02/09/26** | **estrutura TRANSCRITA de imagem real de referência (segmentação: contraste local + componentes conexos): 10 câmaras com cx/cy/tamanhos da referência, eixo serpenteante por polilinha, relaxação determinística em runtime — zero sobreposição visual em 14 viewports** |
+

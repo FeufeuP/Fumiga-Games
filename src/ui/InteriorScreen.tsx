@@ -1,16 +1,14 @@
 /**
- * Interior do formigueiro — spec 1.0 (doc 10_DESIGN_INTERIOR_FORMIGUEIRO.md).
- *
- * Corte transversal de um ninho real:
- *  · SUPERFÍCIE (grama + monte de terra) com a SAÍDA no topo;
- *  · EIXO CENTRAL serpenteante (SVG) descendo até a SALA DA RAINHA na base;
- *  · 10 CÂMARAS em profundidades variadas (bandas semânticas), lados
- *    alternados, offsets horizontais e curvaturas de galeria sorteados por
- *    seed fixa (Rng 0x5eed) — desorganizado como um ninho de verdade,
- *    porém idêntico entre sessões (regra #3 de engenharia).
- *
- * Topologia: 12 nós (1 saída + 10 câmaras + 1 sala real) e 11 túneis
- * (1 eixo central + 10 galerias bezier).
+ * Interior do formigueiro — rev 2.0 (doc 10): estrutura TRANSCRITA de uma
+ * imagem de referência real de corte de ninho em terra (segmentação por
+ * contraste local + componentes conexos, calibração manual):
+ *  · eixo central SERPENTEANTE (deriva à esquerda no meio, volta ao centro);
+ *  · 10 câmaras nas posições/proporções da referência (tamanhos variados);
+ *  · galerias saem do eixo e terminam exatamente na boca de cada câmara
+ *    (rev 1.2), com curvatura orgânica seedada (Rng 0x5eed);
+ *  · silhuetas escavadas únicas por harmônicos (stream Rng 0xcafe).
+ * Semântica preservada: logística rasa (perto da saída) → meta profunda
+ * (perto da Rainha). Sala da Rainha na base do eixo.
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { GameEngine } from '../engine/GameEngine';
@@ -31,31 +29,83 @@ const ALL_MAPS: MapId[] = ['campo', 'pantano', 'deserto', 'montanha', 'caverna',
 type RoomId = 'cemetery' | 'achievements' | 'missions' | 'ants' | 'map' | 'upgrades'
   | 'inventory' | 'rebirth' | 'cards' | 'classes' | null;
 
-/** banda de profundidade (frac 0..1 na zona útil) + lado — doc 10, §3 */
+/**
+ * ESTRUTURA REAL — rev 2.0 (doc 10 §3): posições transcritas da imagem de
+ * referência (corte de ninho em terra), extraídas por segmentação
+ * (contraste local δ=18 + componentes conexos) e calibradas à mão.
+ * cx/cy normalizados [0..1] da tela; s = escala do tamanho da câmara.
+ */
 interface ChamberSpec {
   id: Exclude<RoomId, null>;
   label: string;
   icon: string;
-  side: 'L' | 'R';
-  frac: number;
+  /** centro horizontal (0..1) */
+  cx: number;
+  /** profundidade (0..1) */
+  cy: number;
+  /** escala de tamanho relativa */
+  s: number;
 }
 
+/** semântica de profundidade preservada: logística rasa → meta profunda */
 const CHAMBERS: ChamberSpec[] = [
-  { id: 'cemetery', label: 'CEMITÉRIO', icon: '⚰️', side: 'L', frac: 0.06 },
-  { id: 'map', label: 'MAPA', icon: '🗺️', side: 'R', frac: 0.17 },
-  { id: 'missions', label: 'MISSÕES', icon: '📜', side: 'L', frac: 0.28 },
-  { id: 'ants', label: 'FORMIGAS', icon: '🐜', side: 'R', frac: 0.39 },
-  { id: 'inventory', label: 'INVENTÁRIO', icon: '🎒', side: 'L', frac: 0.5 },
-  { id: 'upgrades', label: 'MELHORIAS', icon: '⚙️', side: 'R', frac: 0.61 },
-  { id: 'achievements', label: 'CONQUISTAS', icon: '🏆', side: 'L', frac: 0.71 },
-  { id: 'cards', label: 'CARTAS', icon: '🃏', side: 'R', frac: 0.81 },
-  { id: 'classes', label: 'CLASSES', icon: '🦴', side: 'L', frac: 0.91 },
-  { id: 'rebirth', label: 'RENASCER', icon: '🔄', side: 'R', frac: 0.99 },
+  { id: 'cemetery', label: 'CEMITÉRIO', icon: '⚰️', cx: 0.3, cy: 0.22, s: 0.9 },
+  { id: 'map', label: 'MAPA', icon: '🗺️', cx: 0.83, cy: 0.28, s: 0.85 },
+  { id: 'missions', label: 'MISSÕES', icon: '📜', cx: 0.2, cy: 0.34, s: 1.1 },
+  { id: 'ants', label: 'FORMIGAS', icon: '🐜', cx: 0.88, cy: 0.35, s: 0.85 },
+  { id: 'inventory', label: 'INVENTÁRIO', icon: '🎒', cx: 0.63, cy: 0.42, s: 1.0 },
+  { id: 'upgrades', label: 'MELHORIAS', icon: '⚙️', cx: 0.42, cy: 0.52, s: 1.3 },
+  { id: 'achievements', label: 'CONQUISTAS', icon: '🏆', cx: 0.3, cy: 0.62, s: 1.05 },
+  { id: 'cards', label: 'CARTAS', icon: '🃏', cx: 0.16, cy: 0.7, s: 0.95 },
+  { id: 'classes', label: 'CLASSES', icon: '🦴', cx: 0.68, cy: 0.72, s: 1.0 },
+  { id: 'rebirth', label: 'RENASCER', icon: '🔄', cx: 0.86, cy: 0.75, s: 0.9 },
 ];
 
 /**
- * Câmara escavada orgânica (doc 10 §8, rev 1.1): blob irregular por harmonias
- * de raio (2f/3f/5f) com fases sorteadas, achatado verticalmente, com a
+ * Eixo serpenteante da referência (doc 10 §6, rev 2.0): desce da boca
+ * (centro do topo), deriva à esquerda no meio e volta ao centro na base.
+ */
+const SHAFT_PTS: Array<[number, number]> = [
+  [0.5, 0.09], [0.47, 0.2], [0.42, 0.3], [0.38, 0.4],
+  [0.42, 0.5], [0.46, 0.62], [0.43, 0.74], [0.46, 0.86],
+];
+
+/** Catmull-Rom → bezier: polilinha em curva suave (coordenadas em % da tela) */
+function smoothPath(pts: Array<[number, number]>): string {
+  const f = (v: number) => (v * 100).toFixed(2);
+  let d = `M ${f(pts[0][0])} ${f(pts[0][1])}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C ${f(c1x)} ${f(c1y)}, ${f(c2x)} ${f(c2y)}, ${f(p2[0])} ${f(p2[1])}`;
+  }
+  return d;
+}
+
+const SHAFT = smoothPath(SHAFT_PTS);
+
+/** x do eixo (0..1) numa profundidade y — interpolação linear da polilinha */
+function shaftXAt(y: number): number {
+  for (let i = 0; i < SHAFT_PTS.length - 1; i++) {
+    const [x1, y1] = SHAFT_PTS[i];
+    const [x2, y2] = SHAFT_PTS[i + 1];
+    if (y <= y2 || i === SHAFT_PTS.length - 2) {
+      const t = Math.min(1, Math.max(0, (y - y1) / (y2 - y1 || 1)));
+      return x1 + (x2 - x1) * t;
+    }
+  }
+  return 0.5;
+}
+
+/**
+ * Câmara escavada orgânica (doc 10 §8.1): blob irregular por harmonias de
+ * raio (2f/3f/5f) com fases sorteadas, achatado verticalmente, com a
  * "boca" afundada no lado voltado ao eixo — por onde a galeria chega.
  */
 function cavePaths(rng: Rng, side: 'L' | 'R'): { cave: string; floor: string; tipInset: number } {
@@ -90,54 +140,103 @@ function cavePaths(rng: Rng, side: 'L' | 'R'): { cave: string; floor: string; ti
   return { cave, floor, tipInset };
 }
 
-/** geometria gerada por seed (doc 10, §5); depende de vw p/ converter o
- *  recuo da boca (unidades da caixa 120) em % da tela */
+/** layout pronto p/ render; depende de vw p/ converter caixa (120) → % tela */
 interface ChamberLayout {
   spec: ChamberSpec;
-  /** top em % da tela: 11% + frac × 56% (+ jitter) */
-  y: number;
-  /** afastamento horizontal do eixo, em % da largura */
-  x: number;
-  /** path SVG da galeria (borda e miolo usam o mesmo path) */
+  leftPct: string;
+  topPct: string;
+  widthCss: string;
   gallery: string;
-  /** contorno orgânico da câmara escavada (viewBox 120×96) */
   cave: string;
-  /** arco de piso de terra dentro da câmara */
   floor: string;
 }
 
-function buildLayout(vw: number): ChamberLayout[] {
-  const rng = new Rng(0x5eed);
-  const caveRng = new Rng(0xcafe); // stream separado p/ preservar o layout 1.0 auditado
-  const cwPx = Math.min(140, Math.max(112, vw * 0.16)); // espelha o clamp() do CSS .cave
-  const cwPct = (cwPx / vw) * 100;
-  return CHAMBERS.map((spec) => {
-    const s = spec.side === 'R' ? 1 : -1;
-    const x = rng.float(8, 22); // offset horizontal (doc §4)
-    const y = 11 + spec.frac * 56 + rng.float(-1.2, 1.2); // profundidade + jitter
-    const { cave, floor, tipInset } = cavePaths(caveRng, spec.side);
+function buildLayout(vw: number, vh: number): ChamberLayout[] {
+  const caveRng = new Rng(0xcafe); // silhuetas das câmaras (stream separado)
+  const baseW = Math.min(140, Math.max(84, Math.min(vw, vh) * 0.145)); // = clamp(84px, 14.5vmin, 140px)
+  const capUn = 13 / (vw / 100); // raio do traço da galeria em unidades-%
+  // teto de profundidade: não invadir a Sala da Rainha (~165px na base)
+  const yMax = 100 - (165 / vh) * 100;
+  const rng = new Rng(0x5eed); // curvaturas orgânicas das galerias
+
+  // caixas iniciais: posições da REFERÊNCIA (doc 10 §3, rev 2.0)
+  const boxes = CHAMBERS.map((spec) => {
+    const cwPct = ((baseW * spec.s) / vw) * 100;
+    const half = cwPct / 2;
+    return {
+      spec,
+      x: Math.min(100 - half - 0.6, Math.max(half + 0.6, spec.cx * 100)),
+      y: spec.cy * 100,
+      half,
+      hph: half * 0.8,
+    };
+  });
+
+  // RELAXAÇÃO determinística (rev 2.0): separa pares que colidam neste
+  // viewport — em telas grandes quase não mexe (fiel à referência); em
+  // telas apertadas abre espaço. Passo com resfriamento, sem aleatoriedade.
+  const MIN_D = 1.02;
+  for (let iter = 0; iter < 600; iter++) {
+    const cool = Math.pow(0.995, iter);
+    let moved = false;
+    for (let a = 0; a < boxes.length; a++) {
+      for (let b = a + 1; b < boxes.length; b++) {
+        const A = boxes[a];
+        const B = boxes[b];
+        const rx = A.half + B.half;
+        const ry = A.hph + B.hph;
+        const dx = (A.x - B.x) / rx;
+        const dy = (A.y - B.y) / ry;
+        const d = Math.hypot(dx, dy);
+        if (d < MIN_D) {
+          const ux = d > 1e-6 ? dx / d : 0;
+          const uy = d > 1e-6 ? dy / d : 1;
+          const s = ((MIN_D - d) / 2) * cool; // passo limitado + resfriamento
+          A.x += ux * s;
+          A.y += uy * s;
+          B.x -= ux * s;
+          B.y -= uy * s;
+          moved = true;
+        }
+      }
+    }
+    for (const bx of boxes) {
+      bx.x = Math.min(100 - bx.half - 0.6, Math.max(bx.half + 0.6, bx.x));
+      bx.y = Math.min(Math.max(10 + bx.hph, bx.y), yMax - bx.hph);
+    }
+    if (!moved) break;
+  }
+
+  return boxes.map((bx) => {
+    const { spec, x: cxPct, y: yPct, half } = bx;
+    const cwPct = half * 2;
+    const shX = shaftXAt(yPct / 100) * 100;
+    const dir = shX >= cxPct ? 1 : -1; // boca aponta para o eixo
+    const { cave, floor, tipInset } = cavePaths(caveRng, dir === 1 ? 'L' : 'R');
     const insetPct = (tipInset / 120) * cwPct;
-    // galeria: do eixo central até a PONTA DA BOCA da câmara (rev 1.2) —
-    // termina a um raio-de-cap da silhueta: o cap arredondado encosta na
-    // boca sem cruzar a borda da câmara, em qualquer largura de tela
-    const capUn = 13 / (vw / 100); // raio do traço (26px) em unidades-%
-    const reach = x + insetPct - capUn - 0.15;
-    const sx = 50 + s * 3.6;
-    const ex = 50 + s * reach;
-    const c1x = 50 + s * (3.6 + (reach - 3.6) * 0.35);
-    const c2x = 50 + s * (3.6 + (reach - 3.6) * 0.8);
-    const c1y = y + rng.float(-3, 3);
-    const c2y = y + rng.float(-3, 3);
-    const gallery = `M ${sx.toFixed(2)} ${y.toFixed(2)} C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${ex.toFixed(2)} ${y.toFixed(2)}`;
-    return { spec, y, x, gallery, cave, floor };
+    // galeria: do CENTRO DO EIXO (na profundidade da câmara) até a PONTA da
+    // boca — cap arredondado encosta na silhueta sem cruzá-la (rev 1.2)
+    const tip = cxPct + dir * insetPct;
+    const end = tip - dir * (capUn + 0.15);
+    const bend1 = shX + dir * Math.abs(end - shX) * 0.35 + rng.float(-1.5, 1.5);
+    const bend2 = shX + dir * Math.abs(end - shX) * 0.75 + rng.float(-1.5, 1.5);
+    const y1 = yPct + rng.float(-2.5, 2.5);
+    const y2 = yPct + rng.float(-2.5, 2.5);
+    const gallery = `M ${shX.toFixed(2)} ${yPct.toFixed(2)} C ${bend1.toFixed(2)} ${y1.toFixed(2)}, ${bend2.toFixed(2)} ${y2.toFixed(2)}, ${end.toFixed(2)} ${yPct.toFixed(2)}`;
+    return {
+      spec,
+      leftPct: `${cxPct.toFixed(2)}%`,
+      topPct: `${yPct.toFixed(2)}%`,
+      widthCss: `calc(clamp(84px, 14.5vmin, 140px) * ${spec.s})`,
+      gallery,
+      cave,
+      floor,
+    };
   });
 }
 
-/** eixo central serpenteante: da boca (y=9) à Sala da Rainha (y=74), x=50±4 — doc §6 */
-const SHAFT = 'M 50 9 C 46 22, 54 36, 50 50 C 46 61, 54 68, 50 74';
-
 /** camada de túneis: cada traço é desenhado 2× (borda + miolo);
- *  galerias terminam na ponta da boca com cap arredondado (rev 1.2) */
+ *  galerias saem do eixo serpenteante e terminam na boca (rev 2.0) */
 function NestTunnels({ layout }: { layout: ChamberLayout[] }) {
   return (
     <svg className={styles.svgLayer} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -148,9 +247,9 @@ function NestTunnels({ layout }: { layout: ChamberLayout[] }) {
           <path d={gallery} fill="none" stroke="#241109" strokeWidth={18} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         </g>
       ))}
-      {/* eixo central */}
-      <path d={SHAFT} fill="none" stroke="#8b562d" strokeWidth={76} strokeLinecap="square" vectorEffect="non-scaling-stroke" />
-      <path d={SHAFT} fill="none" stroke="#2a170d" strokeWidth={64} strokeLinecap="square" vectorEffect="non-scaling-stroke" />
+      {/* eixo central serpenteante da referência */}
+      <path d={SHAFT} fill="none" stroke="#8b562d" strokeWidth={76} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <path d={SHAFT} fill="none" stroke="#2a170d" strokeWidth={64} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
@@ -188,12 +287,13 @@ export default function InteriorScreen({ engine, hud }: Props) {
 
   // o recuo da boca depende da largura da câmara em % da tela → rebuild no resize
   const [vw, setVw] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
+  const [vh, setVh] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 720));
   useEffect(() => {
-    const onResize = () => setVw(window.innerWidth);
+    const onResize = () => { setVw(window.innerWidth); setVh(window.innerHeight); };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-  const layout = useMemo(() => buildLayout(vw), [vw]);
+  const layout = useMemo(() => buildLayout(vw, vh), [vw, vh]);
 
   const hungerPct = (hud.queenHunger / hud.queenHungerMax) * 100;
   const cemetery = engine.respawnQueue;
@@ -213,17 +313,12 @@ export default function InteriorScreen({ engine, hud }: Props) {
         </button>
       </div>
 
-      {/* câmaras escavadas em profundidades variadas (doc §3–5, rev 1.1) */}
-      {layout.map(({ spec, x, y, cave, floor }) => (
+      {/* câmaras escavadas nas posições da referência (doc 10 §3, rev 2.0) */}
+      {layout.map(({ spec, leftPct, topPct, widthCss, cave, floor }) => (
         <button
           key={spec.id}
           className={styles.cave}
-          style={{
-            top: `${y.toFixed(2)}%`,
-            ...(spec.side === 'R'
-              ? { left: `calc(50% + ${x.toFixed(2)}%)` }
-              : { right: `calc(50% + ${x.toFixed(2)}%)` }),
-          }}
+          style={{ left: leftPct, top: topPct, width: widthCss }}
           onClick={() => setRoom(spec.id)}
         >
           <svg className={styles.caveArt} viewBox="0 0 120 96" aria-hidden="true">

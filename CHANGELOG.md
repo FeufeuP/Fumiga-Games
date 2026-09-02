@@ -4,6 +4,26 @@ Formato: fase do plano (`01_PLANO_DE_DESENVOLVIMENTO.md`) → o que entrou.
 
 ---
 
+## 0.4.0 — Interior rev 2.0: estrutura de formigueiro REAL (2026-09-02)
+
+- **Layout transcrito de uma imagem de referência real** (corte de ninho
+  em terra): segmentação por contraste local (δ=18) + filtro de maioria +
+  componentes conexos → posições (cx/cy) e tamanhos das 10 câmaras + eixo.
+- **Eixo serpenteante real**: polilinha (0.50,0.09)→…→(0.46,0.86) suavizada
+  por Catmull-Rom→bezier — desce da boca, deriva à esquerda no meio e volta
+  ao centro na base (Sala da Rainha).
+- **Câmaras com tamanhos variados** como na referência (MELHORIAS grande no
+  meio-esquerdo, MAPA/FORMIGAS compactas à direita etc.), semântica de
+  profundidade preservada (logística rasa → meta profunda).
+- **Relaxação determinística em runtime**: pares que colidam no viewport
+  atual são separados (passo limitado + resfriamento, ≤600 iter, sem
+  aleatoriedade); deriva 0pp em telas grandes (fiel), 5–27pp em apertadas.
+- Câmaras dimensionadas por `clamp(84px, 14.5vmin, 140px) × s` — encolhem
+  em telas baixas/paisagem.
+- **Validado em 14 viewports** (320×690 → 1920×1080, retrato+paisagem):
+  zero sobreposição visual; galerias ainda terminam na ponta das bocas.
+- Doc 10 → rev 2.0; `tsc` limpo; 144/144 testes; executável regenerado.
+
 ## 0.3.5 — Túneis conectam nas bocas (sem sobrepor salas) (2026-09-02)
 
 - **Correção rev 1.2**: as galerias avançavam ~7un sobre as câmaras (o traço
