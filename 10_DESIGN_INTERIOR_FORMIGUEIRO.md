@@ -22,13 +22,13 @@ O ninho tem **12 nós** e **11 túneis**:
 | # | Nó | Tipo | Posição |
 |---|---|---|---|
 | 1 | SAÍDA (botão `btn_back` + rótulo) | entrada/saída | centro do topo, sobre a faixa de grama |
-| 2–11 | 10 câmaras funcionais (botões) | câmara | laterais do eixo, profundidades variadas |
+| 2–11 | 10 câmaras funcionais (câmaras escavadas) | câmara | laterais do eixo, profundidades variadas |
 | 12 | SALA DA RAINHA | câmara real | base do eixo central |
 
 | # | Túnel | Tipo | Trajeto |
 |---|---|---|---|
 | 1 | Eixo central (túnel principal) | serpenteante | da boca (sob a saída) até a Sala da Rainha |
-| 2–11 | 10 galerias laterais | curvas orgânicas | do eixo até o centro de cada câmara |
+| 2–11 | 10 galerias laterais | curvas orgânicas | do eixo até a **boca** de cada câmara (ponta do túnel) |
 
 **Regra de ouro:** nenhuma câmara encosta em outra; galeria nenhuma é reta
 e horizontal — todas têm curvatura/ângulo orgânico (estilo raiz).
@@ -125,6 +125,26 @@ Cada traço é desenhado **duas vezes** (borda depois miolo) com
 6. `image-rendering: pixelated` em toda imagem;
 7. Tipografia monoespaçada bold, títulos com `text-shadow 2px 2px 0`.
 
+### 8.1 Câmara escavada (rev 1.1) — não é botão
+
+As câmaras **não são botões-retângulo**: cada uma é uma cavidade escavada
+no subsolo, desenhada em SVG:
+
+- **Contorno orgânico**: blob irregular gerado por harmonias de raio
+  (2f/3f/5f) com fases e amplitudes sorteadas — stream `Rng(0xcafe)`,
+  independente do stream do layout (`0x5eed`) — achatado verticalmente
+  (×0,82) para ficar mais largo que alto, como câmaras reais;
+- **Boca da câmara**: o raio afunde ~32% no lado voltado ao eixo central —
+  é por essa abertura que a ponta da galeria entra (túnel e sala se
+  encontram de verdade, ~7un de sobreposição);
+- **Camadas** (traçadas do mesmo path): borda externa `#14100c` (11un) →
+  aro de terra `#8b562d` (6un) → cavidade escura `#1f1008` → arco de piso
+  de terra `#3a2012` no fundo (profundidade);
+- **Conteúdo**: ícone + rótulo flutuam no centro da cavidade, com sombra
+  dura de texto para leitura sobre o escuro;
+- **Estados**: hover clareia a cavidade (`#2c1809`) e amplia o ícone;
+  active afunda a câmara 2px; foco visível para teclado.
+
 ## 9. Interação
 
 | Ação | Resposta |
@@ -153,7 +173,7 @@ Cada traço é desenhado **duas vezes** (borda depois miolo) com
 | Camada de túneis | `src/ui/InteriorScreen.tsx` | `<NestTunnels>` (SVG) |
 | Superfície/monte | `src/ui/interior.module.css` | `.surface`, `.mound` |
 | Boca do túnel | `src/ui/interior.module.css` | `.mouth` |
-| Câmara/galeria/zoom visual | `src/ui/interior.module.css` | `.chamber`, `.galleyL/R` |
+| Câmara escavada | `src/ui/InteriorScreen.tsx` + `interior.module.css` | `cavePaths()`, `.cave*` |
 | Sala real | `src/ui/interior.module.css` | `.queenRoom` |
 
 ## 12. Histórico de revisões
@@ -163,3 +183,4 @@ Cada traço é desenhado **duas vezes** (borda depois miolo) com
 | 0.3.2 | 01/09/26 | primeiro túnel central — galerias sem `position: absolute` ⇒ câmaras amontoadas no canto superior esquerdo |
 | 1.0 | 02/09/26 | spec completa: profundidades por banda, offsets seedados, galerias SVG bezier, superfície com grama/monte; implementação corrigida |
 | **1.0.1** | **02/09/26** | **auditoria spec↔código: alinhados 3 desvios — eixo passa a x=50±4 e y 9→74 exatos; boca do túnel `.mouth` (#1b0e06) adicionada sob o monte; galerias estendidas +6un até o centro da câmara** |
+| **1.1** | **02/09/26** | **câmaras deixam de ser botões: viram SALAS ESCAVADAS orgânicas (blob 2f/3f/5f, stream 0xcafe, boca voltada ao eixo); galerias terminam na PONTA de cada túnel, entrando pela boca (§8.1)** |

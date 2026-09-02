@@ -53,6 +53,38 @@ const CHAMBERS: ChamberSpec[] = [
   { id: 'rebirth', label: 'RENASCER', icon: '🔄', side: 'R', frac: 0.99 },
 ];
 
+/**
+ * Câmara escavada orgânica (doc 10 §8, rev 1.1): blob irregular por harmonias
+ * de raio (2f/3f/5f) com fases sorteadas, achatado verticalmente, com a
+ * "boca" afundada no lado voltado ao eixo — por onde a galeria chega.
+ */
+function cavePaths(rng: Rng, side: 'L' | 'R'): { cave: string; floor: string } {
+  const cx = 60;
+  const cy = 48;
+  const base = 40;
+  const a1 = rng.float(0.05, 0.13);
+  const a2 = rng.float(0.04, 0.1);
+  const a3 = rng.float(0.03, 0.07);
+  const p1 = rng.float(0, Math.PI * 2);
+  const p2 = rng.float(0, Math.PI * 2);
+  const p3 = rng.float(0, Math.PI * 2);
+  const mouth = side === 'L' ? 0 : Math.PI; // boca voltada para o eixo central
+  const N = 26;
+  const pts: string[] = [];
+  for (let i = 0; i < N; i++) {
+    const t = (i / N) * Math.PI * 2;
+    let r = base * (1 + a1 * Math.sin(2 * t + p1) + a2 * Math.sin(3 * t + p2) + a3 * Math.sin(5 * t + p3));
+    const d = Math.abs(((t - mouth + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    if (d < 0.7) r *= 0.68 + 0.14 * (d / 0.7); // afunda a boca na direção do túnel
+    const x = Math.round(cx + r * Math.cos(t));
+    const y = Math.round(cy + r * 0.82 * Math.sin(t));
+    pts.push(`${i === 0 ? 'M' : 'L'} ${x} ${y}`);
+  }
+  const cave = `${pts.join(' ')} Z`;
+  const floor = `M ${cx - 26} ${cy + 18} Q ${cx} ${cy + 30}, ${cx + 26} ${cy + 18} L ${cx + 22} ${cy + 12} Q ${cx} ${cy + 22}, ${cx - 22} ${cy + 12} Z`;
+  return { cave, floor };
+}
+
 /** geometria gerada uma única vez por seed (doc 10, §5) */
 interface ChamberLayout {
   spec: ChamberSpec;
@@ -62,24 +94,30 @@ interface ChamberLayout {
   x: number;
   /** path SVG da galeria (borda e miolo usam o mesmo path) */
   gallery: string;
+  /** contorno orgânico da câmara escavada (viewBox 120×96) */
+  cave: string;
+  /** arco de piso de terra dentro da câmara */
+  floor: string;
 }
 
 const LAYOUT: ChamberLayout[] = (() => {
   const rng = new Rng(0x5eed);
+  const caveRng = new Rng(0xcafe); // stream separado p/ preservar o layout 1.0 auditado
   return CHAMBERS.map((spec) => {
     const s = spec.side === 'R' ? 1 : -1;
     const x = rng.float(8, 22); // offset horizontal (doc §4)
     const y = 11 + spec.frac * 56 + rng.float(-1.2, 1.2); // profundidade + jitter
-    // galeria: do eixo central até o CENTRO da câmara (termina sob ela),
-    // curva orgânica (doc §6) — +6 unidades adentram a câmara
+    // galeria: do eixo central até a PONTA na boca da câmara escavada (doc §6):
+    // adentra ~7un pela boca afundada — túnel e sala se encontram de verdade
     const sx = 50 + s * 3.6;
-    const ex = 50 + s * (x + 6);
-    const c1x = 50 + s * (3.6 + (x + 6 - 3.6) * 0.35);
-    const c2x = 50 + s * (3.6 + (x + 6 - 3.6) * 0.8);
+    const ex = 50 + s * (x + 7);
+    const c1x = 50 + s * (3.6 + (x + 7 - 3.6) * 0.35);
+    const c2x = 50 + s * (3.6 + (x + 7 - 3.6) * 0.8);
     const c1y = y + rng.float(-3, 3);
     const c2y = y + rng.float(-3, 3);
     const gallery = `M ${sx.toFixed(2)} ${y.toFixed(2)} C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${ex.toFixed(2)} ${y.toFixed(2)}`;
-    return { spec, y, x, gallery };
+    const { cave, floor } = cavePaths(caveRng, spec.side);
+    return { spec, y, x, gallery, cave, floor };
   });
 })();
 
@@ -153,22 +191,30 @@ export default function InteriorScreen({ engine, hud }: Props) {
         </button>
       </div>
 
-      {/* câmaras em profundidades variadas (doc §3–5) */}
-      {LAYOUT.map(({ spec, x, y }) => (
+      {/* câmaras escavadas em profundidades variadas (doc §3–5, rev 1.1) */}
+      {LAYOUT.map(({ spec, x, y, cave, floor }) => (
         <button
           key={spec.id}
-          className={styles.chamber}
+          className={styles.cave}
           style={{
             top: `${y.toFixed(2)}%`,
             ...(spec.side === 'R'
               ? { left: `calc(50% + ${x.toFixed(2)}%)` }
               : { right: `calc(50% + ${x.toFixed(2)}%)` }),
-            transform: 'translateY(-50%)',
           }}
           onClick={() => setRoom(spec.id)}
         >
-          <span className={styles.chamberIcon}>{spec.icon}</span>
-          <span className={styles.chamberLabel}>{spec.label}</span>
+          <svg className={styles.caveArt} viewBox="0 0 120 96" aria-hidden="true">
+            {/* borda externa escura + aro de terra + cavidade escavada + piso */}
+            <path d={cave} className={styles.caveEdge} />
+            <path d={cave} className={styles.caveRim} />
+            <path d={cave} className={styles.caveHole} />
+            <path d={floor} className={styles.caveFloor} />
+          </svg>
+          <span className={styles.caveContent}>
+            <span className={styles.chamberIcon}>{spec.icon}</span>
+            <span className={styles.chamberLabel}>{spec.label}</span>
+          </span>
         </button>
       ))}
 

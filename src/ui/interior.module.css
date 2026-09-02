@@ -110,47 +110,90 @@
   image-rendering: pixelated;
 }
 
-/* ── câmaras (botões) ──────────────────────────────────────── */
-.chamber {
+/* ── câmaras escavadas (salas orgânicas — rev 1.1 do doc 10) ─ */
+.cave {
+  position: absolute;
+  transform: translateY(-50%);
+  width: clamp(112px, 16vw, 140px);
+  aspect-ratio: 120 / 96;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--c-texto);
+  cursor: pointer;
+}
+
+.caveArt {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.caveEdge {
+  fill: none;
+  stroke: #14100c;
+  stroke-width: 11;
+  stroke-linejoin: round;
+}
+
+.caveRim {
+  fill: none;
+  stroke: #8b562d;
+  stroke-width: 6;
+  stroke-linejoin: round;
+}
+
+.caveHole {
+  fill: #1f1008;
+  stroke: #0d0703;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transition: fill 0.15s;
+}
+
+.caveFloor {
+  fill: #3a2012;
+  opacity: 0.75;
+}
+
+.cave:hover .caveHole,
+.cave:focus-visible .caveHole {
+  fill: #2c1809;
+}
+
+.cave:hover .chamberIcon {
+  transform: scale(1.18);
+}
+
+.cave:active {
+  transform: translateY(calc(-50% + 2px));
+}
+
+.caveContent {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  min-width: 92px;
-  max-width: 30vw;
-  padding: 10px 12px;
-  color: var(--c-texto);
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  padding: 0 14px;
   text-align: center;
-  background: #5d341e;
-  border: 3px solid #14100c;
-  border-radius: 8px;
-  box-shadow:
-    inset 0 3px 0 rgba(255, 255, 255, 0.09),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.35),
-    4px 5px 0 rgba(0, 0, 0, 0.35);
-}
-
-.chamber:hover {
-  background: #6d4128;
-}
-
-.chamber:active {
-  transform: translateY(2px);
-  box-shadow:
-    inset 0 3px 0 rgba(255, 255, 255, 0.09),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.35),
-    2px 3px 0 rgba(0, 0, 0, 0.35);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.85);
 }
 
 .chamberIcon {
   font-size: 24px;
   line-height: 1;
+  transition: transform 0.15s;
 }
 
 .chamberLabel {
   font-size: 13px;
   letter-spacing: 1px;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 
 /* ── sala da rainha (base do eixo) ────────────────────────── */

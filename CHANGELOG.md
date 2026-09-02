@@ -4,6 +4,21 @@ Formato: fase do plano (`01_PLANO_DE_DESENVOLVIMENTO.md`) → o que entrou.
 
 ---
 
+## 0.3.4 — Câmaras escavadas orgânicas (doc 10, rev 1.1) (2026-09-02)
+
+- **As 10 salas deixaram de ser botões-retângulo**: agora são câmaras
+  escavadas — blobs SVG orgânicos gerados por harmonias de raio (2f/3f/5f)
+  com fases sorteadas (stream `Rng(0xcafe)`, independente do layout),
+  achatados verticalmente, cada uma com contorno único.
+- **Boca da câmara**: abertura afundada (~32% do raio) no lado voltado ao
+  eixo; as galerias agora terminam NA PONTA de cada túnel, entrando ~7un
+  pela boca — túnel e sala se encontram de verdade.
+- Camadas de escavação: borda externa `#14100c` → aro de terra `#8b562d` →
+  cavidade `#1f1008` → piso de terra `#3a2012`; ícone+rótulo flutuam na
+  cavidade com sombra dura; hover clareia a cavidade e amplia o ícone.
+- Spec atualizada (§8.1 + histórico 1.1); `tsc` limpo; 144/144 testes;
+  executável único regenerado.
+
 ## 0.3.3 — Interior spec 1.0: formigueiro real de verdade (2026-09-02)
 
 - **Correção do 0.3.2**: galerias sem `position: absolute` deixavam as 10
