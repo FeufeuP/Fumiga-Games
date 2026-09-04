@@ -4,6 +4,58 @@ Formato: fase do plano (`01_PLANO_DE_DESENVOLVIMENTO.md`) → o que entrou.
 
 ---
 
+## 0.5.0 — Chão procedural por tileset + fonte pixel oficial (2026-09-02)
+
+### Chão novo (arte de referência do autor)
+
+- **Tilesets extraídos de `images/chão {campo,pântano,deserto}.jpeg`** por
+  `scripts/extract-tiles.py`: detecta a grade da folha pelas faixas pretas,
+  recorta cada quadro e escreve `src/assets/tiles/<bioma>.png` + `tiles.json`.
+- **Tiles tileáveis de verdade**: bordas opostas fundidas (wrap-blend) — a
+  costura medida ficou em **0.00** de diferença.
+- **Sem grade fantasma**: a arte desenha uma moldura de folhagem em cada quadro
+  (medida: vai até ~24% da meia-largura). A textura de base passa a sair do
+  **miolo** (34% de recorte), com devignette + achatamento de baixa frequência.
+  A vinheta caiu de **+32 → +0,5** níveis e a variação de brilho entre tiles
+  do mesmo grupo de **10,0 → 0,9**.
+- **Classificação relativa por bioma** (k-means/maior-vão no eixo verde-vermelho):
+  cada folha tem paleta própria, então "base" e "mancha" são descobertas
+  comparando os tiles entre si. Limiar fixo dividia o pântano ao meio e o chão
+  saía num xadrez verde/marrom.
+- **Geração procedural** (`src/render/terrain.ts`): value noise fBm de 3
+  oitavas, determinístico por `(x, y, seed)` — nada vai para o save.
+- **Transição suave** por **máscara direcional**: o tile só desbota no lado em
+  que encosta em terreno mais raso, com contorno ondulado por harmônicos. A
+  primeira tentativa (dithering de Bayer no limiar) picotava a clareira —
+  **26% dos tiles de terra ficavam isolados**; agora são **<10%**, e as manchas
+  saem coesas com beirada orgânica.
+- **Cache em chunk** de 8×8 tiles com LRU (64 blocos): ~12 blits por frame em
+  vez de ~1500 `drawImage`.
+- Correção de precisão: o hash usava `seed * 1442695040888963407`, que estoura
+  o float64 e **colapsava o ruído num valor só** (mapa inteiro de um tipo).
+  Agora é tudo `Math.imul` em 32 bits — 260/260 células distintas.
+
+### Fonte
+
+- **Fonte pixel oficial** gerada de `images/fonte pixelada.jpeg`:
+  `scripts/extract-font.py` recupera o grid nativo da arte (pixelão de 3px,
+  **pureza 0.0 — corte sem perda**) e lê as 52 letras na resolução original.
+- Os caracteres que a folha não traz são **desenhados no mesmo esqueleto**:
+  10 numerais, 30+ sinais de pontuação e **24 acentuadas** (Á Â Ã À É Ê Í Ó Ô
+  Õ Ú Ü Ç…), compostas sobre a letra base — 121 glifos no total.
+- `scripts/build-font.py` vetoriza para **WOFF2 de 2,4 KB** (fonttools), então
+  a UI inteira usa `font-family` normal e o texto escala sem borrar.
+- Aplicada em toda a interface e também no canvas; os `'Courier New'` soltos
+  viraram `var(--font-pixel)`.
+
+### Verificação
+
+- `tsc` limpo; **152/152 testes** (8 novos em `src/render/terrain.test.ts`,
+  cobrindo determinismo, coesão das manchas e o colapso do ruído).
+- Boot real em DOM: menu → JOGAR → chão desenhado por tiles, **0 erros**.
+- `scripts/preview-terrain.mjs` renderiza o chão offline (mesma matemática)
+  para inspecionar bioma/semente sem abrir o navegador.
+
 ## 0.4.0 — Interior rev 2.0: estrutura de formigueiro REAL (2026-09-02)
 
 - **Layout transcrito de uma imagem de referência real** (corte de ninho

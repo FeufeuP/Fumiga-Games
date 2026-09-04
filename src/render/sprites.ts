@@ -6,9 +6,17 @@
  *  · formiga 96×96 desenhada a ⅓ (32px), âncora (43, 45.5)/3;
  *  · animações: operária 7 frames, lagarta 7, aranha 6.
  */
-import { ANT_RECOLOR, ANT_SPRITE, type AntClass, type EnemyKind } from '../core/constants';
+import { ANT_RECOLOR, ANT_SPRITE, type AntClass, type EnemyKind, type MapId } from '../core/constants';
+import tilesManifest from '../assets/tiles/tiles.json';
+import type { TerrainAtlases, TileAtlas } from './terrain';
 
 const urls = import.meta.glob('../assets/sprites/*', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+const tileUrls = import.meta.glob('../assets/tiles/*.png', {
   eager: true,
   query: '?url',
   import: 'default',
@@ -80,6 +88,8 @@ export interface SpriteSet {
   soundOn: string;
   soundOff: string;
   woodTile: string;
+  /** Atlas de chão por mapa — base da geração procedural do terreno. */
+  terrain: TerrainAtlases;
 }
 
 let cached: SpriteSet | null = null;
@@ -113,6 +123,30 @@ export async function loadSprites(): Promise<SpriteSet> {
     loadImage(url('hero_ant.png')), loadImage(url('cloud.png')),
   ]);
 
+  // atlas de chão (um por bioma) — opcionais: se faltar, o mapa cai no
+  // preenchimento liso antigo.
+  const terrain: TerrainAtlases = {};
+  const manifest = tilesManifest as Record<string, {
+    cols: number; tile: number; grass: number[]; detail: number[]; dirt: number[]; sand: number[];
+  }>;
+  await Promise.all(
+    Object.entries(manifest).map(async ([mapId, m]) => {
+      const u = tileUrls[`../assets/tiles/${mapId}.png`];
+      if (!u) return;
+      try {
+        const img = await loadImage(u);
+        terrain[mapId as MapId] = {
+          image: img,
+          cols: m.cols,
+          tile: m.tile,
+          groups: { grass: m.grass, detail: m.detail, dirt: m.dirt, sand: m.sand },
+        } satisfies TileAtlas;
+      } catch {
+        /* atlas ausente: mapa usa o chão liso */
+      }
+    }),
+  );
+
   const workerFrames = [w1, w2, w3, w4, w5, w6, w7] as Frame[];
   const soldierFrames = workerFrames.map((f) => recolor(f, ANT_RECOLOR.soldier.a, ANT_RECOLOR.soldier.b) as unknown as Frame);
   const scoutFrames = workerFrames.map((f) => recolor(f, ANT_RECOLOR.scout.a, ANT_RECOLOR.scout.b) as unknown as Frame);
@@ -132,6 +166,7 @@ export async function loadSprites(): Promise<SpriteSet> {
     soundOn: url('sound_on.png'),
     soundOff: url('sound_off.png'),
     woodTile: url('interior_wood_tile.png'),
+    terrain,
   };
   return cached;
 }

@@ -77,7 +77,7 @@ function LoadingScreen() {
         justifyContent: 'center',
         background: '#14120f',
         color: '#f5e6c8',
-        fontFamily: "'Courier New', monospace",
+        fontFamily: 'var(--font-pixel)',
         fontWeight: 700,
         letterSpacing: 2,
       }}

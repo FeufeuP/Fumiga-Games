@@ -1,4 +1,13 @@
-/* Reset mínimo + base. Fonte pixel de verdade entra com a arte oficial. */
+/* Reset mínimo + base. Fonte pixel oficial: gerada de images/fonte pixelada.jpeg
+   (ver scripts/extract-font.py + scripts/build-font.py). */
+@font-face {
+  font-family: 'Formigueiro';
+  src: url('../assets/fonts/Formigueiro.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
 * {
   margin: 0;
   padding: 0;

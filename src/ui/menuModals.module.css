@@ -24,7 +24,7 @@
   border-radius: 14px;
   box-shadow: 0 0 0 2px #14100a, 0 16px 40px rgba(0, 0, 0, 0.6);
   color: #f5e6c8;
-  font-family: "'Courier New', monospace";
+  font-family: var(--font-pixel);
   text-align: center;
 }
 
